@@ -1,4 +1,4 @@
-# Lumina Firestore Schema
+# Lumia Firestore Schema
 
 This is the shared database contract for Web, iOS, and Android. Firestore does not require pre-created tables. Collections and documents are created automatically when a client writes to these paths.
 

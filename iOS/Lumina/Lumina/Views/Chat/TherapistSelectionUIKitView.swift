@@ -122,7 +122,7 @@ private final class TherapistSelectionHeroView: UIView {
         super.init(frame: frame)
         backgroundColor = .luminaBackground
 
-        eyebrowLabel.text = "AI SANCTUARY"
+        eyebrowLabel.text = "GUIDES"
         eyebrowLabel.font = .systemFont(ofSize: 10, weight: .heavy)
         eyebrowLabel.textColor = .luminaMutedForeground
         eyebrowLabel.translatesAutoresizingMaskIntoConstraints = false

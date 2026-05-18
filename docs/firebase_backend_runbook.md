@@ -1,6 +1,6 @@
-# Lumina Firebase Backend Runbook
+# Lumia Firebase Backend Runbook
 
-Lumina uses Firebase as the shared backend for Web, iOS, and Android. Clients should not call AI vendors directly for production text features.
+Lumia uses Firebase as the shared backend for Web, iOS, and Android. Clients should not call AI vendors directly for production text features.
 
 ## Backend Pieces
 
@@ -122,7 +122,7 @@ Before release:
 ```bash
 npm --prefix functions run build
 npm run build
-xcodebuild -project iOS/Lumina/Lumina.xcodeproj -scheme Lumina -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project iOS/Lumia/Lumia.xcodeproj -scheme Lumia -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
 ```
 
 After deploy, test:

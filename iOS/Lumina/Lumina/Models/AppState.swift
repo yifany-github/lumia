@@ -204,7 +204,7 @@ enum SubscriptionTier: String, Codable, CaseIterable, Identifiable, Equatable {
     var title: String {
         switch self {
         case .free: return "Free"
-        case .premium: return "Lumina Plus"
+        case .premium: return "Lumia Plus"
         }
     }
 }
@@ -1690,7 +1690,7 @@ final class JITAIStore: ObservableObject {
                 id: "jitai-checkin-recovery-\(dayKey)-\(todayCheckIn.id)",
                 kind: .recovery,
                 title: "Keep the next step gentle",
-                message: "Today's mood check-in is low. Lumina can shift toward recovery instead of pushing momentum.",
+                message: "Today's mood check-in is low. Lumia can shift toward recovery instead of pushing momentum.",
                 actionTitle: "Open Sanctuary",
                 destinationTab: 4,
                 confidence: 0.76,
@@ -1728,7 +1728,7 @@ final class JITAIStore: ObservableObject {
                 id: "jitai-recovery-\(dayKey)",
                 kind: .recovery,
                 title: "Keep today lighter",
-                message: "Sleep looks below your recent personal range. Lumina can suggest a calmer check-in instead of pushing productivity.",
+                message: "Sleep looks below your recent personal range. Lumia can suggest a calmer check-in instead of pushing productivity.",
                 actionTitle: "Open Sanctuary",
                 destinationTab: 4,
                 confidence: 0.74,
@@ -2411,7 +2411,7 @@ final class AppState: ObservableObject {
         do {
             try persistenceService.save(snapshot())
         } catch {
-            print("Lumina persistence save failed: \(error.localizedDescription)")
+            print("Lumia persistence save failed: \(error.localizedDescription)")
         }
     }
 
@@ -2963,7 +2963,7 @@ final class AppState: ObservableObject {
 
         var lines = [
             "Continuity memory for \(therapist.name):",
-            "- You are the same \(therapist.name) the user spoke with before. Maintain your own voice and role; do not present yourself as generic Lumina."
+            "- You are the same \(therapist.name) the user spoke with before. Maintain your own voice and role; do not present yourself as generic Lumia."
         ]
 
         for session in priorSessions {
@@ -2986,6 +2986,11 @@ final class AppState: ObservableObject {
 
         lines.append("- Use this memory lightly. Mention prior work only when it helps, and let the user correct it.")
         return lines.joined(separator: "\n")
+    }
+
+    func hasTherapistMemory(for therapist: Therapist, excluding sessionID: String? = nil) -> Bool {
+        chatStore.sessions(for: therapist)
+            .contains { $0.id != sessionID && $0.messageCount >= 3 }
     }
 
     private static func compactTherapyMemoryText(_ text: String, limit: Int) -> String {
@@ -3027,10 +3032,11 @@ final class AppState: ObservableObject {
             .components(separatedBy: "\n")
             .first(where: { $0.contains("user brought:") })?
             .replacingOccurrences(of: #"^- [A-Za-z]{3} \d{1,2}, user brought: "#, with: "", options: .regularExpression) {
+            let focus = Self.compactTherapyMemoryText(previousFocus, limit: 96)
             return """
             \(therapist.greeting)
 
-            Welcome back. Last time, we were near: \(previousFocus) We can continue there, or begin with what feels most present today.
+            Welcome back. I remember we were near \(focus). We can continue there, or start with what feels most present today.
             """
         }
 
@@ -3038,22 +3044,41 @@ final class AppState: ObservableObject {
               let bridge = wellbeingContext(for: therapist).journalBridge,
               !bridge.isEmpty else { return nil }
 
-        let theme = bridge.recurringThemes.first
+        let theme = safeJournalTheme(bridge.recurringThemes.first, for: therapist)
         let base: String
         switch therapist.id {
         case "willow":
-            base = theme.map { "Recent reflections seem to circle around \($0). We can turn that into one small, workable step, or start somewhere else." } ?? "We can use recent reflections to find one clear next step, or begin fresh."
+            base = theme.map { "The recent notes seem to circle around \($0). We can turn that into one small, workable step, or start somewhere else." } ?? "We can look for one clear next step, or begin fresh."
         case "serena":
-            base = theme.map { "Recent reflections suggest \($0) may be carrying some weight. We can stay with the feeling gently, or start anywhere you like." } ?? "We can use recent reflections as soft context, or just begin with what you feel right now."
+            base = theme.map { "The recent notes suggest \($0) may be carrying some weight. We can stay with the feeling gently, or start anywhere you like." } ?? "We can begin with what you feel right now."
         case "eden":
-            base = theme.map { "Recent reflections point toward \($0). If it fits, we can look at the relationship side gently, or choose a different place to begin." } ?? "We can use recent reflections to understand connection patterns, or begin fresh."
+            base = theme.map { "The recent notes point toward \($0). If it fits, we can look at the relationship side gently, or choose a different place to begin." } ?? "We can look at connection patterns, or begin fresh."
         case "nimbus":
-            base = theme.map { "Recent reflections suggest \($0) may be present. We can start with grounding first, or talk through what is here." } ?? "We can use recent reflections to keep this low-pressure, or simply start with your breath."
+            base = theme.map { "The recent notes suggest \($0) may be present. We can start with grounding first, or talk through what is here." } ?? "We can keep this low-pressure, or simply start with your breath."
         default:
-            base = theme.map { "Recent reflections mention \($0). We can start there if useful, or begin somewhere else." } ?? "I can use recent reflections as gentle context, or we can start fresh."
+            base = theme.map { "The recent notes mention \($0). We can start there if useful, or begin somewhere else." } ?? "We can start fresh."
         }
 
         return "\(therapist.greeting)\n\n\(base)"
+    }
+
+    private func safeJournalTheme(_ theme: String?, for therapist: Therapist) -> String? {
+        guard let theme = theme?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !theme.isEmpty else { return nil }
+        let normalized = theme.lowercased()
+        let blocked = [
+            therapist.id.lowercased(),
+            therapist.name.lowercased(),
+            therapist.name.replacingOccurrences(of: "Dr. ", with: "").lowercased(),
+            "dr willow",
+            "doctor",
+            "therapy",
+            "therapist"
+        ]
+        guard !blocked.contains(where: { !$0.isEmpty && normalized.contains($0) }) else {
+            return nil
+        }
+        return theme
     }
 
     var useJournalContextInTherapy: Bool {
@@ -3577,7 +3602,7 @@ final class AppState: ObservableObject {
                 self.restoreTherapySessionsFromCloud()
                 self.refreshSubscriptionFromCloud()
             } catch {
-                print("Lumina Firebase auth sync failed: \(error.localizedDescription)")
+                print("Lumia Firebase auth sync failed: \(error.localizedDescription)")
             }
         }
     }
@@ -3589,7 +3614,7 @@ final class AppState: ObservableObject {
                 let subscription = try await self.firebaseBackend.fetchSubscriptionState()
                 self.subscriptionStore.update(subscription)
             } catch {
-                print("Lumina subscription fetch failed: \(error.localizedDescription)")
+                print("Lumia subscription fetch failed: \(error.localizedDescription)")
             }
         }
     }
@@ -3601,7 +3626,7 @@ final class AppState: ObservableObject {
             do {
                 try await self.firebaseBackend.saveSubscriptionState(state)
             } catch {
-                print("Lumina subscription sync failed: \(error.localizedDescription)")
+                print("Lumia subscription sync failed: \(error.localizedDescription)")
             }
         }
     }
@@ -3614,7 +3639,7 @@ final class AppState: ObservableObject {
                 guard !remoteSessions.isEmpty else { return }
                 self.chatStore.saveSessions(remoteSessions, publish: .deferred)
             } catch {
-                print("Lumina therapy cloud fetch failed: \(error.localizedDescription)")
+                print("Lumia therapy cloud fetch failed: \(error.localizedDescription)")
             }
         }
     }
@@ -3627,7 +3652,7 @@ final class AppState: ObservableObject {
             do {
                 try await self.firebaseBackend.saveTherapySession(session)
             } catch {
-                print("Lumina therapy cloud sync failed: \(error.localizedDescription)")
+                print("Lumia therapy cloud sync failed: \(error.localizedDescription)")
             }
             self.cloudSessionSyncTasks[session.id] = nil
         }
@@ -3640,7 +3665,7 @@ final class AppState: ObservableObject {
             do {
                 try await self.firebaseBackend.saveTherapyContext(snapshot, therapistID: therapist?.id)
             } catch {
-                print("Lumina therapy context cloud sync failed: \(error.localizedDescription)")
+                print("Lumia therapy context cloud sync failed: \(error.localizedDescription)")
             }
         }
     }
@@ -3654,7 +3679,7 @@ final class AppState: ObservableObject {
                 do {
                     try await self.firebaseBackend.deleteTherapySession(id: id)
                 } catch {
-                    print("Lumina therapy cloud delete failed: \(error.localizedDescription)")
+                    print("Lumia therapy cloud delete failed: \(error.localizedDescription)")
                 }
                 self.cloudSessionSyncTasks[id] = nil
             }

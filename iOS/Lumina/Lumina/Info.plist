@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Lumina</string>
+	<string>Lumia</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -32,15 +32,15 @@
 		</dict>
 	</array>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Lumina reads daily sleep, activity, and heart-rate summaries to personalize gentle check-ins. It stores only aggregated daily values, not raw samples.</string>
+	<string>Lumia reads daily sleep, activity, and heart-rate summaries to personalize gentle check-ins. It stores only aggregated daily values, not raw samples.</string>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Lumina uses Face ID to protect your private reflections and conversations when Privacy Lock is enabled.</string>
+	<string>Lumia uses Face ID to protect your private reflections and conversations when Privacy Lock is enabled.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Lumina uses the microphone to turn your spoken check-ins into text before you send them.</string>
+	<string>Lumia uses the microphone to turn your spoken check-ins into text before you send them.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Lumina uses the camera for optional video therapy sessions.</string>
+	<string>Lumia uses the camera for optional video therapy sessions.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Lumina uses speech recognition to transcribe your voice into the chat input.</string>
+	<string>Lumia uses speech recognition to transcribe your voice into the chat input.</string>
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UISupportedInterfaceOrientations</key>

@@ -130,7 +130,7 @@ const ChatSession: React.FC<ChatSessionProps> = ({ therapist, initialPrompt, isL
           setMessages(prev => [...prev, {
               id: Date.now().toString(),
               role: 'model',
-              text: "Please sign in so I can connect securely to Lumina AI."
+              text: "Please sign in so I can connect securely to Lumia AI."
           }]);
       } else {
           const modelMsg: ChatMessage = {
@@ -321,7 +321,7 @@ const ChatSession: React.FC<ChatSessionProps> = ({ therapist, initialPrompt, isL
                     </div>
                     <h4 className="font-bold text-red-900 dark:text-red-100 mb-2">Connection Required</h4>
                     <p className="text-sm text-red-700 dark:text-red-200 text-center mb-4">
-                        Sign in so Lumina can connect securely to the AI backend.
+                        Sign in so Lumia can connect securely to the AI backend.
                     </p>
                     <Button onClick={handleConnectKey} className="h-10 text-sm">
                         Sign In

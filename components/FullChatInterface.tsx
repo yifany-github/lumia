@@ -550,7 +550,7 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
     const blob = new Blob([text], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'lumina-session.txt'; a.click();
+    a.href = url; a.download = 'lumia-session.txt'; a.click();
     setIsMoreMenuOpen(false);
   };
 
@@ -597,7 +597,7 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
                 </button>
               )}
               <div className="h-10 w-10 bg-primary rounded-xl flex items-center justify-center text-primary-foreground"><Sparkles size={20} /></div>
-              <span className="font-serif font-bold text-2xl tracking-tight">Lumina</span>
+              <span className="font-serif font-bold text-2xl tracking-tight">Lumia</span>
             </div>
             <button onClick={() => setIsSidebarOpen(false)} className="md:hidden p-2"><X size={20} /></button>
           </div>
@@ -785,7 +785,7 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
               <div className="bg-card rounded-[3rem] p-10 max-w-md text-center shadow-2xl animate-in zoom-in-95">
                   <div className="w-20 h-20 bg-red-100 dark:bg-red-900/40 text-red-500 rounded-full flex items-center justify-center mx-auto mb-8"><Volume2 size={40} /></div>
                   <h3 className="text-3xl font-serif font-bold mb-4">Connection Required</h3>
-                  <p className="text-muted-foreground mb-10 leading-relaxed font-sans">Sign in so Lumina can connect securely to the AI backend.</p>
+                  <p className="text-muted-foreground mb-10 leading-relaxed font-sans">Sign in so Lumia can connect securely to the AI backend.</p>
                   <Button onClick={() => openApiKeySelector().then(() => setApiKeyMissing(false))} className="w-full h-16 text-lg">Sign In</Button>
               </div>
           </div>

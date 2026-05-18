@@ -6,8 +6,8 @@ interface AdminPanelProps {
 }
 
 const mockUsers = [
-  { id: '1', name: 'Guest Traveler', email: 'guest@lumina.ai', role: 'user', status: 'active', joined: '2024-10-20', entries: 12 },
-  { id: '2', name: 'Admin User', email: 'admin@lumina.ai', role: 'admin', status: 'active', joined: '2024-01-15', entries: 45 },
+  { id: '1', name: 'Guest Traveler', email: 'guest@lumia.ai', role: 'user', status: 'active', joined: '2024-10-20', entries: 12 },
+  { id: '2', name: 'Admin User', email: 'admin@lumia.ai', role: 'admin', status: 'active', joined: '2024-01-15', entries: 45 },
   { id: '3', name: 'Sarah Jenkins', email: 'sarah.j@example.com', role: 'user', status: 'inactive', joined: '2024-11-05', entries: 3 },
   { id: '4', name: 'Michael Chen', email: 'm.chen@example.com', role: 'user', status: 'active', joined: '2024-12-01', entries: 28 },
   { id: '5', name: 'Emma Watson', email: 'emma.w@example.com', role: 'user', status: 'active', joined: '2024-12-10', entries: 7 },
@@ -44,7 +44,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onBack }) => {
              <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary shadow-sm">
                  <Shield size={20} />
              </div>
-             <h1 className="font-serif font-bold text-xl tracking-tight">Lumina <span className="text-muted-foreground font-sans font-normal text-base ml-1 hidden sm:inline">Admin</span></h1>
+             <h1 className="font-serif font-bold text-xl tracking-tight">Lumia <span className="text-muted-foreground font-sans font-normal text-base ml-1 hidden sm:inline">Admin</span></h1>
          </div>
          <button onClick={onBack} className="flex items-center gap-2 text-sm font-bold text-muted-foreground hover:text-primary transition-colors">
             <ArrowLeft size={16} /> Back to App

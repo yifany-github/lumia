@@ -36,10 +36,10 @@ struct InsightsTabView: View {
                 .frame(width: 58, height: 58)
                 .background(Color.organicSecondary.opacity(0.12))
                 .clipShape(Circle())
-            Text("Insights will appear here")
+            Text("Patterns will appear here")
                 .luminaFont(size: 22, weight: .bold, design: .serif)
                 .foregroundColor(.organicForeground)
-            Text("After a few reflections, Lumina can save one quiet summary for the day.")
+            Text("After a few entries, today can have one quiet summary.")
                 .luminaFont(size: 13, weight: .medium)
                 .foregroundColor(.organicMutedFg)
                 .multilineTextAlignment(.center)
@@ -61,10 +61,10 @@ struct InsightsTabView: View {
             ProgressView()
                 .tint(.organicSecondary)
                 .scaleEffect(1.25)
-            Text("Saving today’s insight")
+            Text("Saving today’s pattern")
                 .luminaFont(size: 20, weight: .bold, design: .serif)
                 .foregroundColor(.organicForeground)
-            Text("Looking across recent reflections. This is saved so you do not have to regenerate it every time.")
+            Text("Looking across recent entries. Saved for the day.")
                 .luminaFont(size: 13, weight: .medium)
                 .foregroundColor(.organicMutedFg)
                 .multilineTextAlignment(.center)
@@ -92,10 +92,10 @@ struct InsightsTabView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Today’s insight")
+                    Text("Today’s pattern")
                         .luminaFont(size: 23, weight: .bold, design: .serif)
                         .foregroundColor(.organicForeground)
-                    Text("Lumina can create one saved summary from your reflections today. You can refresh it manually when the day changes.")
+                    Text("One saved summary for the day. Refresh only when useful.")
                         .luminaFont(size: 13, weight: .medium)
                         .foregroundColor(.organicMutedFg)
                         .lineSpacing(3)
@@ -104,12 +104,12 @@ struct InsightsTabView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                InsightHintRow(icon: "checkmark.seal.fill", text: "Generated once automatically on first Journal visit each day")
-                InsightHintRow(icon: "lock.fill", text: "Stored locally with your journal data")
-                InsightHintRow(icon: "arrow.clockwise", text: "Manual refresh is available when useful")
+                InsightHintRow(icon: "checkmark.seal.fill", text: "Once a day")
+                InsightHintRow(icon: "lock.fill", text: "Saved with your journal")
+                InsightHintRow(icon: "arrow.clockwise", text: "Refresh when useful")
             }
 
-            generateButton(title: "Generate insight")
+            generateButton(title: "Find the pattern")
 
             if let errorMsg {
                 Text(errorMsg)
@@ -133,7 +133,7 @@ struct InsightsTabView: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Today’s insight")
+                        Text("Today’s pattern")
                             .luminaFont(size: 22, weight: .bold, design: .serif)
                             .foregroundColor(.organicForeground)
                         if let lastGeneratedAt {
@@ -202,7 +202,7 @@ struct InsightsTabView: View {
             }
             
             Button(action: { fetchInsights(force: true) }) {
-                Label("Refresh insights", systemImage: "arrow.clockwise")
+                Label("Refresh", systemImage: "arrow.clockwise")
                     .luminaFont(size: 12, weight: .bold)
                     .foregroundColor(.organicMutedFg)
                     .frame(height: 38)

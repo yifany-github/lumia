@@ -585,7 +585,7 @@ const Dashboard: React.FC<DashboardProps> = ({
              <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary shadow-sm">
                  <Activity size={20} />
              </div>
-             <h1 className="font-serif font-bold text-xl tracking-tight">Lumina <span className="text-muted-foreground font-sans font-normal text-base ml-1 hidden sm:inline">Dashboard</span></h1>
+             <h1 className="font-serif font-bold text-xl tracking-tight">Lumia <span className="text-muted-foreground font-sans font-normal text-base ml-1 hidden sm:inline">Dashboard</span></h1>
          </div>
          <div className="flex items-center gap-3 sm:gap-4">
              <button onClick={onLogout} className="text-sm font-bold text-muted-foreground hover:text-red-500 transition-colors hidden sm:inline">Log Out</button>
@@ -780,7 +780,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                         <div className="bg-card p-12 rounded-[2rem] border border-border/60 shadow-sm flex flex-col items-center justify-center min-h-[400px] text-center">
                             <Loader2 size={40} className="text-secondary animate-spin mb-6" />
                             <h3 className="font-serif text-2xl font-bold mb-2">Analyzing Your Journey</h3>
-                            <p className="text-muted-foreground max-w-md">Lumina is looking for hidden patterns and generating your mental health summary...</p>
+                            <p className="text-muted-foreground max-w-md">Lumia is looking for hidden patterns and generating your mental health summary...</p>
                         </div>
                     ) : deepInsights ? (
                         <>
@@ -816,7 +816,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                                         <div className="w-10 h-10 bg-secondary/10 text-secondary rounded-xl flex items-center justify-center mb-4">
                                             <Sparkles size={20} />
                                         </div>
-                                        <h4 className="font-serif text-xl font-bold mb-2">Lumina's Summary</h4>
+                                        <h4 className="font-serif text-xl font-bold mb-2">Lumia's Summary</h4>
                                         <p className="text-muted-foreground text-sm leading-relaxed italic">"{deepInsights.mentalHealthWrapped.summary}"</p>
                                     </div>
                                     <div className="pt-6 border-t border-border/40">
@@ -833,7 +833,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                                     </div>
                                     <div>
                                         <h3 className="font-serif text-xl font-bold">Trigger Identification</h3>
-                                        <p className="text-xs text-muted-foreground">Patterns Lumina noticed in your entries</p>
+                                        <p className="text-xs text-muted-foreground">Patterns Lumia noticed in your entries</p>
                                     </div>
                                 </div>
 
@@ -912,7 +912,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                                         <Sparkles size={20} className="mr-2" /> Generate My Meditation
                                     </Button>
                                     {entries.length === 0 && (
-                                        <p className="text-xs text-muted-foreground mt-4">Add some journal entries first so Lumina can personalize your meditation.</p>
+                                        <p className="text-xs text-muted-foreground mt-4">Add some journal entries first so Lumia can personalize your meditation.</p>
                                     )}
                                 </>
                             )}

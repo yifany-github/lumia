@@ -198,7 +198,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const demoUser = {
       uid: 'demo-user',
       displayName: 'Guest Traveler',
-      email: 'guest@lumina.ai',
+      email: 'guest@lumia.ai',
       photoURL: 'https://api.dicebear.com/7.x/notionists/svg?seed=Guest&backgroundColor=e0e0e0',
       emailVerified: true,
     } as unknown as User;

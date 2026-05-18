@@ -56,7 +56,7 @@ const CrisisSupport: React.FC<CrisisSupportProps> = ({ isOpen, onClose }) => {
             onClick={onClose}
             className="text-muted-foreground hover:text-foreground font-bold text-sm underline decoration-2 underline-offset-4"
           >
-            I am safe, return to Lumina
+            I am safe, return to Lumia
           </button>
         </div>
         

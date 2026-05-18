@@ -38,13 +38,13 @@ const callAiGateway = async <T,>(feature: string, payload: Record<string, unknow
   if (!response.ok) {
     if (raw.trim().toLowerCase().startsWith("<html")) {
       if (response.status === 404) {
-        throw new Error("Lumina AI is not deployed yet. Deploy the Firebase aiGateway function, then try again.");
+        throw new Error("Lumia AI is not deployed yet. Deploy the Firebase aiGateway function, then try again.");
       }
       if (response.status === 401 || response.status === 403) {
-        throw new Error("Lumina AI is deployed but not callable yet. Redeploy aiGateway with public invoker access.");
+        throw new Error("Lumia AI is deployed but not callable yet. Redeploy aiGateway with public invoker access.");
       }
     }
-    const message = json?.error?.message || json?.error || raw || `Lumina AI request failed (${response.status})`;
+    const message = json?.error?.message || json?.error || raw || `Lumia AI request failed (${response.status})`;
     throw new Error(message);
   }
 
@@ -56,7 +56,7 @@ const friendlyAiError = (error: any): string => {
     return "ERROR_API_KEY_MISSING";
   }
   if (error?.name === 'TypeError' && error?.message?.includes('fetch')) {
-    return "I'm having trouble connecting to Lumina AI. Please check your internet connection and try again.";
+    return "I'm having trouble connecting to Lumia AI. Please check your internet connection and try again.";
   }
   if (error?.name === 'AbortError' || error?.message?.includes('timeout')) {
     return "The request took too long to complete. Please try again.";
@@ -74,7 +74,7 @@ const getAiClient = async (): Promise<GoogleGenAI> => {
   const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY || '';
   
   if (!apiKey) {
-    console.warn("[Lumina Debug] ⚠️ No API key found in environment variables.");
+    console.warn("[Lumia Debug] ⚠️ No API key found in environment variables.");
   }
   
   return new GoogleGenAI({ apiKey });
@@ -83,7 +83,7 @@ const getAiClient = async (): Promise<GoogleGenAI> => {
 export const generateTherapistResponse = async (prompt: string, systemInstruction: string): Promise<string> => {
   try {
     const therapistMatch = systemInstruction.match(/You are\s+([^,.]+)/i);
-    const therapistName = therapistMatch?.[1]?.trim() || "Lumina";
+    const therapistName = therapistMatch?.[1]?.trim() || "Lumia";
     const response = await callAiGateway<{ text?: string }>("therapyChat", {
       therapistID: therapistName.toLowerCase().replace(/^dr\.\s*/, "").split(/\s+/)[0] || "willow",
       therapistName,
@@ -95,7 +95,7 @@ export const generateTherapistResponse = async (prompt: string, systemInstructio
     });
     return response.text || "I'm having trouble finding the right words. Could you say that again?";
   } catch (error: any) {
-    console.error("Lumina AI gateway error:", error);
+    console.error("Lumia AI gateway error:", error);
     return friendlyAiError(error);
   }
 };
@@ -148,7 +148,7 @@ export const analyzeJournalEntry = async (content: string): Promise<{
     return response.analysis ?? null;
   } catch (error: any) {
     console.error("Journal analysis gateway error:", error);
-    throw new Error(error?.message === "SIGN_IN_REQUIRED" ? "Please sign in to use Lumina AI." : "Lumina AI could not analyze this entry right now.");
+    throw new Error(error?.message === "SIGN_IN_REQUIRED" ? "Please sign in to use Lumia AI." : "Lumia AI could not analyze this entry right now.");
   }
 };
 
@@ -158,7 +158,7 @@ export const analyzeDistortions = async (content: string): Promise<Distortion[]>
     return response.distortions ?? [];
   } catch (error: any) {
     console.error("Distortion analysis gateway error:", error);
-    throw new Error(error?.message === "SIGN_IN_REQUIRED" ? "Please sign in to use Lumina AI." : "Lumina AI could not reframe this right now.");
+    throw new Error(error?.message === "SIGN_IN_REQUIRED" ? "Please sign in to use Lumia AI." : "Lumia AI could not reframe this right now.");
   }
 };
 
@@ -200,16 +200,16 @@ export const generateDeepInsights = async (entries: { date: string, content: str
 };
 
 export const generateEmotionImage = async (feeling: string): Promise<string | null> => {
-  console.log("[Lumina Debug] 🎨 Starting 'Draw Feeling' process...");
-  console.time("[Lumina Debug] Total Image Generation Time");
+  console.log("[Lumia Debug] 🎨 Starting 'Draw Feeling' process...");
+  console.time("[Lumia Debug] Total Image Generation Time");
   try {
     const ai = await getAiClient();
     
     const prompt = `Generate an abstract, therapeutic, and beautiful art piece that visually represents this feeling or thought: "${feeling}". The art should be soothing, using colors and shapes that help externalize and accept this emotion. No text in the image.`;
-    console.log("[Lumina Debug] 📝 Constructed Prompt:", prompt);
+    console.log("[Lumia Debug] 📝 Constructed Prompt:", prompt);
     
-    console.log("[Lumina Debug] 🚀 Sending request to gemini-2.5-flash-image API...");
-    console.time("[Lumina Debug] API Network Request Time");
+    console.log("[Lumia Debug] 🚀 Sending request to gemini-2.5-flash-image API...");
+    console.time("[Lumia Debug] API Network Request Time");
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
@@ -219,36 +219,36 @@ export const generateEmotionImage = async (feeling: string): Promise<string | nu
         imageConfig: { aspectRatio: "16:9" }
       },
     });
-    console.timeEnd("[Lumina Debug] API Network Request Time");
+    console.timeEnd("[Lumia Debug] API Network Request Time");
 
-    console.log("[Lumina Debug] 📥 Received response from API, parsing data...");
+    console.log("[Lumia Debug] 📥 Received response from API, parsing data...");
     if (response.candidates && response.candidates.length > 0 && response.candidates[0].content.parts) {
       for (const part of response.candidates[0].content.parts) {
         if (part.inlineData) {
-          console.log("[Lumina Debug] ✅ Successfully extracted image data (Base64).");
-          console.timeEnd("[Lumina Debug] Total Image Generation Time");
+          console.log("[Lumia Debug] ✅ Successfully extracted image data (Base64).");
+          console.timeEnd("[Lumia Debug] Total Image Generation Time");
           return `data:image/png;base64,${part.inlineData.data}`;
         }
       }
     }
     
-    console.warn("[Lumina Debug] ⚠️ API responded, but no image data was found in the payload.");
+    console.warn("[Lumia Debug] ⚠️ API responded, but no image data was found in the payload.");
     throw new Error("No image data returned from the model.");
   } catch (error: any) {
-    console.error("[Lumina Debug] ❌ Image Generation Error:", error);
-    console.timeEnd("[Lumina Debug] Total Image Generation Time");
+    console.error("[Lumia Debug] ❌ Image Generation Error:", error);
+    console.timeEnd("[Lumia Debug] Total Image Generation Time");
     throw new Error(error.message || "Failed to generate image due to high demand or an unexpected error. Please try again later.");
   }
 };
 
 export const editEmotionImage = async (base64ImageData: string, mimeType: string, prompt: string): Promise<string | null> => {
-  console.log("[Lumina Debug] 🖌️ Starting 'Edit Image' process...");
-  console.time("[Lumina Debug] Total Image Edit Time");
+  console.log("[Lumia Debug] 🖌️ Starting 'Edit Image' process...");
+  console.time("[Lumia Debug] Total Image Edit Time");
   try {
     const ai = await getAiClient();
     
-    console.log(`[Lumina Debug] 🚀 Sending edit request to gemini-2.5-flash-image API with prompt: "${prompt}"`);
-    console.time("[Lumina Debug] API Edit Network Request Time");
+    console.log(`[Lumia Debug] 🚀 Sending edit request to gemini-2.5-flash-image API with prompt: "${prompt}"`);
+    console.time("[Lumia Debug] API Edit Network Request Time");
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
       contents: {
@@ -263,22 +263,22 @@ export const editEmotionImage = async (base64ImageData: string, mimeType: string
         ],
       },
     });
-    console.timeEnd("[Lumina Debug] API Edit Network Request Time");
+    console.timeEnd("[Lumia Debug] API Edit Network Request Time");
 
-    console.log("[Lumina Debug] 📥 Received edit response from API, parsing data...");
+    console.log("[Lumia Debug] 📥 Received edit response from API, parsing data...");
     if (response.candidates && response.candidates.length > 0 && response.candidates[0].content.parts) {
       for (const part of response.candidates[0].content.parts) {
         if (part.inlineData) {
-          console.log("[Lumina Debug] ✅ Successfully extracted edited image data.");
-          console.timeEnd("[Lumina Debug] Total Image Edit Time");
+          console.log("[Lumia Debug] ✅ Successfully extracted edited image data.");
+          console.timeEnd("[Lumia Debug] Total Image Edit Time");
           return `data:image/png;base64,${part.inlineData.data}`;
         }
       }
     }
     throw new Error("No image data returned from the model.");
   } catch (error: any) {
-    console.error("[Lumina Debug] ❌ Image Editing Error:", error);
-    console.timeEnd("[Lumina Debug] Total Image Edit Time");
+    console.error("[Lumia Debug] ❌ Image Editing Error:", error);
+    console.timeEnd("[Lumia Debug] Total Image Edit Time");
     throw new Error(error.message || "Failed to edit image.");
   }
 };

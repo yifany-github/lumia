@@ -86,7 +86,7 @@ type AppView = 'landing' | 'dashboard' | 'chat' | 'admin';
 
 const DEFAULT_AVATAR = "https://api.dicebear.com/7.x/notionists/svg?seed=John&backgroundColor=ffdfbf";
 
-const AppLoadingState: React.FC<{ label?: string }> = ({ label = 'Loading Lumina' }) => (
+const AppLoadingState: React.FC<{ label?: string }> = ({ label = 'Loading Lumia' }) => (
   <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
     <div className="rounded-3xl border border-border/60 bg-card/80 px-6 py-5 shadow-sm">
       <div className="h-2 w-36 overflow-hidden rounded-full bg-muted">
@@ -232,7 +232,7 @@ const App: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `lumina-export-${Date.now()}.json`;
+      a.download = `lumia-export-${Date.now()}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

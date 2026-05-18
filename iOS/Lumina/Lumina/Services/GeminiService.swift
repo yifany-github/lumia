@@ -132,7 +132,7 @@ struct ConversationEngine {
         Active prompt policy: \(policy.displayName)
         Policy summary: \(policy.summary)
 
-        Lumina safety and product boundaries:
+        Lumia safety and product boundaries:
         - You provide emotional support and self-help reflection, not diagnosis, medical advice, or emergency care.
         - Do not claim to detect mental illness or infer emotion as a fact.
         - If the user expresses self-harm, suicide, immediate danger, or inability to stay safe, prioritize safety and encourage local emergency/crisis resources.
@@ -329,7 +329,7 @@ private extension ConversationState {
     }
 }
 
-// MARK: - Lumina AI Gateway
+// MARK: - Lumia AI Gateway
 enum GeminiServiceError: LocalizedError {
     case notSignedIn
     case backendUnavailable
@@ -341,17 +341,17 @@ enum GeminiServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notSignedIn:
-            return "Sign in to use Lumina AI."
+            return "Sign in to use Lumia AI."
         case .backendUnavailable:
-            return "Lumina AI is not deployed yet. Deploy the Firebase aiGateway function, then try again."
+            return "Lumia AI is not deployed yet. Deploy the Firebase aiGateway function, then try again."
         case .backendPermissionMissing:
-            return "Lumina AI is deployed but not callable yet. Redeploy aiGateway with public invoker access."
+            return "Lumia AI is deployed but not callable yet. Redeploy aiGateway with public invoker access."
         case .emptyResponse:
-            return "Lumina AI returned an empty response. Try again in a moment."
+            return "Lumia AI returned an empty response. Try again in a moment."
         case .invalidResponse:
-            return "Lumina AI returned a response the app could not read."
+            return "Lumia AI returned a response the app could not read."
         case .gatewayError(let statusCode, let message):
-            return "Lumina AI request failed (\(statusCode)): \(message)"
+            return "Lumia AI request failed (\(statusCode)): \(message)"
         }
     }
 }

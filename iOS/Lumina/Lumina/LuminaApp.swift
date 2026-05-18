@@ -147,7 +147,7 @@ struct LuminaApp: App {
 
         let context = LAContext()
         var authError: NSError?
-        let reason = "Unlock Lumina to view your private reflections and conversations."
+        let reason = "Unlock Lumia to view your private reflections and conversations."
 
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &authError) else {
             privacyLockError = authError?.localizedDescription ?? "Device authentication is not available."
@@ -247,7 +247,7 @@ private struct LuminaPrivacyLockView: View {
                             .foregroundColor(.organicForeground)
                             .multilineTextAlignment(.center)
                             .minimumScaleFactor(0.82)
-                        Text("Take one easy breath. Lumina will open when you are ready.")
+                        Text("Take one easy breath. Lumia will open when you are ready.")
                             .luminaFont(size: 15, weight: .medium)
                             .foregroundColor(.organicMutedFg)
                             .multilineTextAlignment(.center)
@@ -280,7 +280,7 @@ private struct LuminaPrivacyLockView: View {
                         HStack(spacing: 10) {
                             Image(systemName: "faceid")
                                 .luminaFont(size: 18, weight: .bold)
-                            Text("Unlock Lumina")
+                            Text("Unlock Lumia")
                                 .luminaFont(size: 16, weight: .black)
                         }
                         .frame(maxWidth: .infinity)
@@ -407,7 +407,7 @@ struct WelcomeGuideView: View {
                 .frame(width: 32, height: 32)
                 .accessibilityHidden(true)
 
-            Text("Lumina")
+            Text("Lumia")
                 .luminaFont(size: 18, weight: .bold, design: .serif)
                 .foregroundColor(.organicForeground)
 
@@ -432,7 +432,7 @@ struct WelcomeGuideView: View {
                 .luminaFont(size: 13, weight: .semibold)
                 .foregroundColor(.organicPrimary)
 
-            Text("Use Lumina in one small step.")
+            Text("Use Lumia in one small step.")
                 .luminaFont(size: 38, weight: .bold, design: .serif)
                 .foregroundColor(.organicForeground)
                 .lineLimit(3)
@@ -596,7 +596,7 @@ private struct WelcomeGuidePlanCard: View {
             VStack(spacing: 8) {
                 WelcomePlanCompareRow(
                     icon: "bubble.left.and.bubble.right.fill",
-                    title: "AI Chat",
+                    title: "Chat",
                     freeValue: "20 replies / day",
                     plusValue: "Expanded fair use"
                 )
@@ -610,11 +610,11 @@ private struct WelcomeGuidePlanCard: View {
                     icon: "brain.head.profile",
                     title: "Guide memory",
                     freeValue: "Off",
-                    plusValue: "Doctor memory + journal context"
+                    plusValue: "Guide memory + journal themes"
                 )
                 WelcomePlanCompareRow(
                     icon: "chart.line.uptrend.xyaxis",
-                    title: "Deep insights",
+                    title: "Daily patterns",
                     freeValue: "Basic reflection",
                     plusValue: "Daily patterns and summaries"
                 )
@@ -832,7 +832,7 @@ private struct WelcomeGuideStartPicker: View {
                 Text("Start with")
                     .luminaFont(size: 18, weight: .bold, design: .serif)
                     .foregroundColor(.organicForeground)
-                Text("Choose one. You can switch tabs anytime.")
+                Text("Pick what feels easiest right now.")
                     .luminaFont(size: 13, weight: .regular)
                     .foregroundColor(.organicMutedFg)
             }
@@ -942,7 +942,7 @@ private struct WelcomeGuidePage: Identifiable {
             id: "safety",
             eyebrow: "Boundaries",
             title: "Keep it on your terms",
-            message: "Reminders, health context, and suggestions are optional. Lumina should feel like support, not another thing to keep up with.",
+            message: "Reminders, health context, and suggestions are optional. Lumia should feel like support, not another thing to keep up with.",
             tint: Color(hex: 0x0F766E),
             sceneRows: [
                 WelcomeGuideSceneRow(time: "Quiet", title: "Reminders can wait", detail: "Daily caps and quiet hours keep nudges limited."),
@@ -991,10 +991,10 @@ private enum WelcomeStartOption: String, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
-        case .reflect: return "Open Journal and put the day somewhere."
+        case .reflect: return "Put the day somewhere."
         case .talk: return "Start with Serena when you want warmth."
-        case .reset: return "Open Sanctuary for a short reset."
-        case .grow: return "Open Garden and save one tiny action."
+        case .reset: return "Take a short reset."
+        case .grow: return "Save one tiny action."
         }
     }
 

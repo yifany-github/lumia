@@ -703,7 +703,7 @@ struct WellbeingContextSnapshot: Identifiable, Codable {
         let journalSection = journalBridge?.promptSection ?? ""
 
         return """
-        Local wellbeing context brief from Lumina:
+        Local wellbeing context brief from Lumia:
         - This brief is derived from user-visible local app data.
         - It contains no raw Health samples and must not be treated as diagnosis or proof of mood.
         - Prefer explicit self-report over passive context.

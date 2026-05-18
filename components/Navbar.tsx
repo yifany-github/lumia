@@ -50,7 +50,7 @@ const Navbar: React.FC<NavbarProps> = ({
             <Sparkles size={20} strokeWidth={2.5} />
           </div>
           <span className="font-serif font-bold text-xl tracking-tight text-foreground hidden sm:block">
-            Lumina
+            Lumia
           </span>
         </div>
 

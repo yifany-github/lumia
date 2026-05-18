@@ -1,12 +1,12 @@
-# Lumina Architecture Implementation Plan
+# Lumia Architecture Implementation Plan
 
 Source research:
-- `/Users/yifan/Downloads/Lumina 融合用户健康传感数据的理论与实现深度研究报告.pdf`
-- `/Users/yifan/Downloads/Lumina（AI Emotional Support Web App）理论支撑与产品化研究报告.pdf`
+- `/Users/yifan/Downloads/Lumia 融合用户健康传感数据的理论与实现深度研究报告.pdf`
+- `/Users/yifan/Downloads/Lumia（AI Emotional Support Web App）理论支撑与产品化研究报告.pdf`
 
 ## Goal
 
-Move Lumina from a set of feature screens into a safer, testable emotional-support system:
+Move Lumia from a set of feature screens into a safer, testable emotional-support system:
 
 - Explicit conversation state machine instead of free-form chat only.
 - Safety and crisis routing before model generation.
@@ -295,7 +295,7 @@ flowchart TD
 - [x] Therapy, JITAI, follow-ups, and data-control actions now write evaluation/governance events.
 - [x] Home includes a 0-10 mood/stress check-in with optional note.
 - [x] Profile includes governance metrics and false-positive safety feedback.
-- [x] Red-team and rollback procedure documented in `docs/lumina_red_team_rollback.md`.
+- [x] Red-team and rollback procedure documented in `docs/lumia_red_team_rollback.md`.
 - [x] Local persistence added for chat sessions, journal entries, Garden, follow-ups, Health summaries, JITAI, evaluation logs, and profile settings.
 - [x] Build verified after Phase 8 local persistence.
 - [x] Local daily check-in notifications added behind the existing Profile reminder setting.
@@ -321,7 +321,7 @@ flowchart TD
 - [x] Garden Area Logbook now exposes completed chapter memories with story and map-change details.
 - [x] Journal Timeline now supports search, mood filters, clearer summary metrics, empty states, and delete confirmation.
 - [x] Sanctuary now includes a quick reset entry point, clearer support cards, safer affirmation fallback, and breathing timer cleanup.
-- [x] Root navigation now uses a cohesive image-generated Lumina PNG icon family, native TabBar styling, and a Home badge for active follow-ups.
+- [x] Root navigation now uses a cohesive image-generated Lumia PNG icon family, native TabBar styling, and a Home badge for active follow-ups.
 
 ## Current Implementation Notes
 
@@ -331,7 +331,7 @@ flowchart TD
 - Follow-ups are visible before their due date as a queued check-in, then can be completed, snoozed, or marked too hard.
 - Health data is stored as daily aggregates only and must be interpreted as uncertain context, not diagnosis.
 - Wellbeing context is derived at read time from persisted local sources; it should not become a second editable state.
-- Health permissions are controlled by iOS; Lumina offers sync status, local aggregate deletion, and explicit revoke instructions.
+- Health permissions are controlled by iOS; Lumia offers sync status, local aggregate deletion, and explicit revoke instructions.
 - Therapy can use wellbeing context only as an uncertain tone/intervention hint. Do not send raw Health samples or make diagnostic claims.
 - JITAI v1 remains local-rule based. Smart Suggestions notifications are opt-in and can only schedule an active decision produced by the same in-app rules.
 - JITAI should prefer explicit self-report check-ins over passive Health signals when both are available.
@@ -350,7 +350,7 @@ flowchart TD
 - Chapter memories are derived from completed quests plus map evolution definitions; keep them read-only until user-authored notes exist.
 - Journal Timeline filters are transient UI state. Keep journal entry persistence unchanged unless users can save custom views or labels.
 - Sanctuary quick reset actions are direct UI affordances over existing local intervention scripts; keep crisis actions explicit and user-initiated.
-- Root navigation should stay on native `TabView`; extend the Lumina raster PNG asset family instead of mixing unrelated SF Symbols for primary app destinations.
+- Root navigation should stay on native `TabView`; extend the Lumia raster PNG asset family instead of mixing unrelated SF Symbols for primary app destinations.
 - Garden should evolve through small tested loops: forage, tend, build, quest, then NPC/story events. Avoid adding large visual-only changes without mechanics.
 - Daily visitors should remain lightweight and local for now; use them to create variety before adding complex story branches.
 - Keepsakes are currently collection rewards, not spendable resources. Use them next as prerequisites for map area unlocks or deeper visitor chains.

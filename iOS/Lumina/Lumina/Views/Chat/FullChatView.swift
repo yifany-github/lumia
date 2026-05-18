@@ -517,6 +517,7 @@ struct FullChatView: View {
                     showStats: showStats,
                     conversationState: conversationState,
                     usesJournalContext: appState.isUsingJournalContext(for: therapist),
+                    usesGuideMemory: appState.hasTherapistMemory(for: therapist, excluding: sessionIDSnapshot),
                     onBack: {
                         withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.88)) {
                             closeCurrentSession()
@@ -971,7 +972,7 @@ final class TherapyCallSessionController: NSObject, ObservableObject {
 
     let captureSession = AVCaptureSession()
 
-    private let sessionQueue = DispatchQueue(label: "Lumina.TherapyCall.CameraSession")
+    private let sessionQueue = DispatchQueue(label: "Lumia.TherapyCall.CameraSession")
     private let videoFrameEmitter = TherapyVideoFrameEmitter()
     private var currentKind: TherapyCallKind = .voice
     private var cameraInput: AVCaptureDeviceInput?
@@ -1575,7 +1576,7 @@ final class TherapyLiveCallController: ObservableObject {
     private static func liveSystemInstruction(therapist: Therapist, history: [ChatMessage], contextBrief: String?, isVideoCall: Bool) -> String {
         let recent = history.suffix(8).map { "\($0.role.rawValue): \($0.text)" }.joined(separator: "\n")
         return """
-        You are \(therapist.name), \(therapist.role), in Lumina's Therapy \(isVideoCall ? "video" : "voice") session.
+        You are \(therapist.name), \(therapist.role), in Lumia's Therapy \(isVideoCall ? "video" : "voice") session.
         Speak naturally, warmly, and briefly. This is emotional support, not medical diagnosis.
         Listen to the speaker carefully. Respond unmistakably in the user's language.
         Ask one question at a time. Avoid sounding scripted. If there is self-harm or immediate danger, encourage contacting local emergency support.
@@ -1609,7 +1610,7 @@ final class TherapyLiveCallController: ObservableObject {
     private static func userFacingLiveError(_ error: Error) -> String {
         let raw = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         #if DEBUG
-        print("Lumina Gemini Live raw error: \(raw)")
+        print("Lumia Gemini Live raw error: \(raw)")
         #endif
         if raw.localizedCaseInsensitiveContains("1008") || raw.localizedCaseInsensitiveContains("policy") {
             return "The live audio session closed unexpectedly. Please try again, or continue in text chat."
@@ -2085,7 +2086,7 @@ private struct SwipeRowActionButton: View {
 private struct TherapySelectionHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("AI SANCTUARY")
+            Text("GUIDES")
                 .luminaFont(size: 10, weight: .heavy)
                 .foregroundStyle(Color.organicMutedFg)
 
@@ -2121,7 +2122,7 @@ private struct TherapySafetyBoundaryCard: View {
                 Text("Support boundary")
                     .luminaFont(size: 13, weight: .black)
                     .foregroundStyle(Color.organicForeground)
-                Text("Lumina offers emotional support and self-help reflection, not diagnosis or emergency care. If you may be in danger, contact local emergency services or a crisis line now.")
+                Text("Lumia offers emotional support and self-help reflection, not diagnosis or emergency care. If you may be in danger, contact local emergency services or a crisis line now.")
                     .luminaFont(size: 12, weight: .semibold)
                     .foregroundStyle(Color.organicMutedFg)
                     .lineSpacing(2)
@@ -2494,6 +2495,7 @@ struct ChatScreenView: View {
     let showStats: Bool
     let conversationState: ConversationState
     let usesJournalContext: Bool
+    let usesGuideMemory: Bool
     let onBack: () -> Void
     let onToggleStats: () -> Void
     let onReset: () -> Void
@@ -2520,8 +2522,12 @@ struct ChatScreenView: View {
                 accent: Color(hex: therapist.accentHex),
                 onSelect: onSelectConversationState
             )
-            if usesJournalContext {
-                TherapyContextNotice(accent: Color(hex: therapist.accentHex))
+            if usesJournalContext || usesGuideMemory {
+                TherapyContextNotice(
+                    accent: Color(hex: therapist.accentHex),
+                    usesJournalContext: usesJournalContext,
+                    usesGuideMemory: usesGuideMemory
+                )
             }
             Divider()
             MessageListView(
@@ -2648,13 +2654,28 @@ struct ConversationModePicker: View {
 
 private struct TherapyContextNotice: View {
     let accent: Color
+    let usesJournalContext: Bool
+    let usesGuideMemory: Bool
+
+    private var title: String {
+        switch (usesJournalContext, usesGuideMemory) {
+        case (true, true):
+            return "Using journal themes and guide memory"
+        case (false, true):
+            return "Using guide memory"
+        case (true, false):
+            return "Using journal themes"
+        default:
+            return ""
+        }
+    }
 
     var body: some View {
         HStack(spacing: 7) {
             Circle()
                 .fill(accent)
                 .frame(width: 6, height: 6)
-            Text("Recent reflections available")
+            Text(title)
                 .luminaFont(size: 10, weight: .bold)
                 .lineLimit(1)
             Spacer(minLength: 0)
@@ -2663,7 +2684,7 @@ private struct TherapyContextNotice: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
         .background(Color.organicCard.opacity(0.70))
-        .accessibilityLabel("Therapy is using summarized recent journal reflections")
+        .accessibilityLabel(title)
     }
 }
 
@@ -3339,7 +3360,7 @@ struct VideoCallStage: View {
                     HStack(spacing: 7) {
                         Image(systemName: isSharingCameraWithAI ? "eye.fill" : "eye.slash.fill")
                             .luminaFont(size: 11, weight: .black)
-                        Text(isSharingCameraWithAI ? "Video context on" : "Share camera with AI")
+                        Text(isSharingCameraWithAI ? "Video context on" : "Share camera")
                             .luminaFont(size: 11, weight: .black)
                             .lineLimit(1)
                     }

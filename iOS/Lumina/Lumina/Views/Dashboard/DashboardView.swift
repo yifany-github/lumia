@@ -70,31 +70,6 @@ struct DashboardView: View {
                         onOpenProfile: { showingProfile = true }
                     )
 
-                    HomeMembershipStatusCard(
-                        hasPremiumAccess: appState.hasPremiumAccess,
-                        onOpenMembership: { showingProfile = true }
-                    )
-
-                    HomeRecommendationCard(recommendation: makeRecommendation())
-
-                    HomeStillOpenCard(
-                        entries: recentEntries,
-                        latestSession: latestSession,
-                        therapist: latestSessionTherapist,
-                        onOpenJournal: { appState.selectedTab = 1 },
-                        onNewReflection: {
-                            editingEntry = nil
-                            showingEditor = true
-                        },
-                        onOpenTherapy: {
-                            if let therapist = latestSessionTherapist {
-                                appState.requestTherapy(with: therapist)
-                            } else {
-                                appState.selectedTab = 2
-                            }
-                        }
-                    )
-
                     DailyCheckInCard(
                         existingCheckIn: appState.todayCheckIn,
                         moodScore: $checkInMood,
@@ -121,6 +96,31 @@ struct DashboardView: View {
                                 )
                             }
                         }
+                    )
+
+                    HomeStillOpenCard(
+                        entries: recentEntries,
+                        latestSession: latestSession,
+                        therapist: latestSessionTherapist,
+                        onOpenJournal: { appState.selectedTab = 1 },
+                        onNewReflection: {
+                            editingEntry = nil
+                            showingEditor = true
+                        },
+                        onOpenTherapy: {
+                            if let therapist = latestSessionTherapist {
+                                appState.requestTherapy(with: therapist)
+                            } else {
+                                appState.selectedTab = 2
+                            }
+                        }
+                    )
+
+                    HomeRecommendationCard(recommendation: makeRecommendation())
+
+                    HomeMembershipStatusCard(
+                        hasPremiumAccess: appState.hasPremiumAccess,
+                        onOpenMembership: { showingProfile = true }
                     )
 
                     Spacer(minLength: 28)
@@ -473,7 +473,7 @@ private struct DashboardHeroView: View {
                     LuminaAssetIcon(name: "LuminaMark", size: 19, tint: .organicPrimary)
                         .frame(width: 30, height: 30)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Lumina")
+                        Text("Lumia")
                             .luminaFont(size: 17, weight: .bold, design: .serif)
                             .foregroundColor(.organicForeground)
                         Text(Date.now, format: .dateTime.weekday(.wide).month(.abbreviated).day())
@@ -525,8 +525,8 @@ private struct HomeMembershipStatusCard: View {
 
     private var message: String {
         hasPremiumAccess
-            ? "Live sessions, deeper insights, and guide memory are available."
-            : "Today includes 20 AI replies and a 5-minute voice preview."
+            ? "Longer conversations and guide memory are available."
+            : "Free today: 20 replies and 5 minutes of voice."
     }
 
     private var actionTitle: String {
@@ -535,78 +535,46 @@ private struct HomeMembershipStatusCard: View {
 
     var body: some View {
         Button(action: onOpenMembership) {
-            VStack(alignment: .leading, spacing: 13) {
-                HStack(alignment: .center, spacing: 12) {
-                    Image("LuminaMark")
-                        .renderingMode(.original)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 34, height: 34)
-                        .padding(9)
-                        .background(Color.organicPrimary.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .accessibilityHidden(true)
+            HStack(alignment: .center, spacing: 12) {
+                Image("LuminaMark")
+                    .renderingMode(.original)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 30, height: 30)
+                    .padding(8)
+                    .background(Color.organicPrimary.opacity(0.10), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    .accessibilityHidden(true)
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(title)
-                            .luminaFont(size: 18, weight: .bold, design: .serif)
-                            .foregroundColor(.organicForeground)
-                        Text(message)
-                            .luminaFont(size: 12, weight: .semibold)
-                            .foregroundColor(.organicMutedFg)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                    }
-
-                    Spacer(minLength: 0)
-
-                    Text(actionTitle)
-                        .luminaFont(size: 12, weight: .black)
-                        .foregroundColor(hasPremiumAccess ? .organicPrimary : Color(hex: 0x7A5C16))
-                        .padding(.horizontal, 12)
-                        .frame(height: 32)
-                        .background((hasPremiumAccess ? Color.organicPrimary : Color(hex: 0xD8B45D)).opacity(0.13))
-                        .clipShape(Capsule())
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .luminaFont(size: 16, weight: .bold, design: .serif)
+                        .foregroundColor(.organicForeground)
+                    Text(message)
+                        .luminaFont(size: 12, weight: .semibold)
+                        .foregroundColor(.organicMutedFg)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                 }
 
-                HStack(spacing: 8) {
-                    HomeMembershipLimitPill(label: "AI Chat", value: hasPremiumAccess ? "Expanded" : "20/day")
-                    HomeMembershipLimitPill(label: "Voice", value: hasPremiumAccess ? "300 min/mo" : "5 min/day")
-                    HomeMembershipLimitPill(label: "Memory", value: hasPremiumAccess ? "On" : "Locked")
-                }
+                Spacer(minLength: 0)
+
+                Text(actionTitle)
+                    .luminaFont(size: 12, weight: .black)
+                    .foregroundColor(hasPremiumAccess ? .organicPrimary : Color(hex: 0x7A5C16))
+                    .padding(.horizontal, 12)
+                    .frame(height: 32)
+                    .background((hasPremiumAccess ? Color.organicPrimary : Color(hex: 0xD8B45D)).opacity(0.13))
+                    .clipShape(Capsule())
             }
-            .padding(15)
-            .background(Color.organicCard.opacity(0.92), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(14)
+            .background(Color.organicCard.opacity(0.78), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder((hasPremiumAccess ? Color.organicPrimary : Color(hex: 0xD8B45D)).opacity(0.32), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder((hasPremiumAccess ? Color.organicPrimary : Color(hex: 0xD8B45D)).opacity(0.24), lineWidth: 1)
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(hasPremiumAccess ? "Manage Lumina Plus" : "Compare Free and Lumina Plus")
-    }
-}
-
-private struct HomeMembershipLimitPill: View {
-    let label: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .luminaFont(size: 9, weight: .black)
-                .foregroundColor(.organicMutedFg)
-                .textCase(.uppercase)
-                .kerning(0.7)
-            Text(value)
-                .luminaFont(size: 11, weight: .bold)
-                .foregroundColor(.organicForeground)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .frame(height: 46)
-        .background(Color.organicMuted.opacity(0.48), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityLabel(hasPremiumAccess ? "Manage Lumia Plus" : "Compare Free and Lumia Plus")
     }
 }
 
@@ -623,18 +591,18 @@ private struct HomeStillOpenCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Still open")
+                Text("Since last time")
                     .luminaFont(size: 18, weight: .bold, design: .serif)
                     .foregroundColor(.organicForeground)
                 Spacer()
-                Text("Optional")
+                Text("Saved")
                     .luminaFont(size: 10, weight: .black)
                     .foregroundColor(.organicMutedFg)
                     .textCase(.uppercase)
                     .kerning(1.0)
             }
 
-            Text("A couple of threads you can return to when it helps.")
+            Text("The pieces worth picking back up.")
                 .luminaFont(size: 12, weight: .medium)
                 .foregroundColor(.organicMutedFg)
 
@@ -644,8 +612,8 @@ private struct HomeStillOpenCard: View {
                     HomeOpenThreadRow(
                         icon: "leaf.fill",
                         tint: .organicPrimary,
-                        title: "Nothing needs continuing",
-                        subtitle: "You can start anywhere from the tabs below.",
+                        title: "Nothing left open",
+                        subtitle: "Start fresh whenever you need to.",
                         actionTitle: "Leave it",
                         action: {}
                     )
@@ -681,8 +649,8 @@ private struct HomeStillOpenCard: View {
                 HomeOpenThread(
                     icon: "bubble.left.fill",
                     tint: Color(hex: therapist.accentHex),
-                    title: "Continue with \(therapist.name)",
-                    subtitle: latestSession.lastMessagePreview.isEmpty ? "A recent therapy conversation is saved." : latestSession.lastMessagePreview,
+                    title: "Last talked with \(therapist.name)",
+                    subtitle: latestSession.lastMessagePreview.isEmpty ? "A recent conversation is saved." : latestSession.lastMessagePreview,
                     actionTitle: "Continue",
                     action: onOpenTherapy
                 )
@@ -694,7 +662,7 @@ private struct HomeStillOpenCard: View {
                 HomeOpenThread(
                     icon: entry.mood.icon,
                     tint: entry.mood.timelineTint,
-                    title: "Return to \(entry.title)",
+                    title: "Latest note: \(entry.title)",
                     subtitle: entry.summary ?? entry.reflection ?? entry.content,
                     actionTitle: "Review",
                     action: onOpenJournal
@@ -706,7 +674,7 @@ private struct HomeStillOpenCard: View {
                     icon: "square.and.pencil",
                     tint: .organicPrimary,
                     title: "Leave one sentence",
-                    subtitle: "A short reflection is enough if you want to mark today.",
+                    subtitle: "A short note is enough.",
                     actionTitle: "Write",
                     action: onNewReflection
                 )
@@ -783,56 +751,33 @@ private struct HomeRecommendationCard: View {
     @State private var showWhy = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Today’s starting point")
-                    .luminaFont(size: 18, weight: .bold, design: .serif)
-                    .foregroundColor(.organicForeground)
-                Text("One suggested next step, not another menu.")
-                    .luminaFont(size: 12, weight: .medium)
-                    .foregroundColor(.organicMutedFg)
-            }
-
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: recommendation.icon)
                     .luminaFont(size: 16, weight: .semibold)
                     .foregroundColor(recommendation.tint)
-                    .frame(width: 38, height: 38)
+                    .frame(width: 40, height: 40)
                     .background(recommendation.tint.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(recommendation.eyebrow)
+                    Text("Today")
                         .luminaFont(size: 11, weight: .semibold)
                         .foregroundColor(.organicMutedFg)
                     Text(recommendation.title)
-                        .luminaFont(size: 23, weight: .bold, design: .serif)
+                        .luminaFont(size: 21, weight: .bold, design: .serif)
                         .foregroundColor(.organicForeground)
                         .lineLimit(2)
                     Text(recommendation.message)
-                        .luminaFont(size: 14, weight: .regular)
+                        .luminaFont(size: 13, weight: .regular)
                         .foregroundColor(.organicMutedFg)
-                        .lineSpacing(4)
+                        .lineSpacing(3)
+                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 0)
             }
-
-            Button {
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    showWhy.toggle()
-                }
-            } label: {
-                HStack(spacing: 7) {
-                    Image(systemName: showWhy ? "chevron.up" : "info.circle.fill")
-                        .luminaFont(size: 11, weight: .semibold)
-                    Text(showWhy ? "Hide" : "Reason")
-                        .luminaFont(size: 12, weight: .semibold)
-                }
-                .foregroundColor(recommendation.tint)
-            }
-            .buttonStyle(.plain)
 
             if showWhy {
                 VStack(alignment: .leading, spacing: 8) {
@@ -855,19 +800,36 @@ private struct HomeRecommendationCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
 
-            Button(action: recommendation.action) {
-                HStack(spacing: 8) {
-                    Text(recommendation.actionTitle)
-                    Image(systemName: "arrow.right")
+            HStack(spacing: 10) {
+                Button(action: recommendation.action) {
+                    HStack(spacing: 8) {
+                        Text(recommendation.actionTitle)
+                        Image(systemName: "arrow.right")
+                    }
+                        .luminaFont(size: 14, weight: .bold)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(recommendation.tint)
+                        .foregroundColor(colorScheme == .dark ? .organicBackground : .white)
+                        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
                 }
-                    .luminaFont(size: 14, weight: .bold)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 46)
-                    .background(recommendation.tint)
-                    .foregroundColor(colorScheme == .dark ? .organicBackground : .white)
-                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .buttonStyle(.plain)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        showWhy.toggle()
+                    }
+                } label: {
+                    Image(systemName: showWhy ? "chevron.up" : "info.circle")
+                        .luminaFont(size: 13, weight: .semibold)
+                        .foregroundColor(recommendation.tint)
+                        .frame(width: 44, height: 44)
+                        .background(recommendation.tint.opacity(0.10))
+                        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(showWhy ? "Hide why" : "Show why")
             }
-            .buttonStyle(.plain)
 
             if recommendation.secondaryTitle != nil || recommendation.quietTitle != nil {
                 HStack(spacing: 8) {
@@ -882,11 +844,11 @@ private struct HomeRecommendationCard: View {
                 }
             }
         }
-        .padding(18)
+        .padding(16)
         .background(colorScheme == .dark ? Color.organicElevated.opacity(0.98) : Color.organicCard.opacity(0.74))
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .strokeBorder(recommendation.tint.opacity(colorScheme == .dark ? 0.34 : 0.20), lineWidth: 1)
         }
     }
@@ -1978,7 +1940,7 @@ struct JournalRootView: View {
 
     enum JournalSection: String, CaseIterable {
         case timeline = "Timeline"
-        case insights = "Insights"
+        case insights = "Patterns"
 
         var icon: String {
             switch self {

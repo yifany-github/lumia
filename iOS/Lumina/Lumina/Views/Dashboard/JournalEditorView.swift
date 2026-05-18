@@ -89,7 +89,7 @@ struct JournalEditorView: View {
                                 .luminaFont(size: 28, weight: .bold, design: .serif)
                                 .foregroundColor(.organicForeground)
 
-                            Text("Write what happened, let Lumina reflect it back, then keep only what is useful.")
+                            Text("Write what happened, let Lumia reflect it back, then keep only what is useful.")
                                 .luminaFont(size: 14, weight: .medium)
                                 .foregroundColor(.organicMutedFg)
                                 .lineSpacing(3)
@@ -217,7 +217,7 @@ struct JournalEditorView: View {
                                     } else {
                                         Image(systemName: "sparkles")
                                     }
-                                    Text(isAnalyzing ? "Reflecting..." : "AI Reflection")
+                                    Text(isAnalyzing ? "Reflecting..." : "Reflect")
                                 }
                                 .luminaFont(size: 14, weight: .black)
                                 .frame(maxWidth: .infinity)
@@ -264,7 +264,7 @@ struct JournalEditorView: View {
 
                         if !reflection.isEmpty {
                             VStack(alignment: .leading, spacing: 12) {
-                                Label("AI Reflection", systemImage: "sparkles")
+                                Label("Reflect", systemImage: "sparkles")
                                     .luminaFont(size: 14, weight: .bold)
                                     .foregroundColor(.organicPrimary)
 
@@ -336,11 +336,11 @@ struct JournalEditorView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 10) {
-                            Label("Therapy Memory", systemImage: "text.bubble.fill")
+                            Label("Therapy context", systemImage: "text.bubble.fill")
                                 .luminaFont(size: 13, weight: .black)
                                 .foregroundColor(.organicForeground)
 
-                            Picker("Therapy Memory", selection: $therapyMemoryPolicy) {
+                            Picker("Therapy context", selection: $therapyMemoryPolicy) {
                                 ForEach(JournalTherapyMemoryPolicy.allCases, id: \.rawValue) { policy in
                                     Text(policy.title).tag(policy)
                                 }

@@ -41,7 +41,7 @@ const PhilosophySection: React.FC = () => {
               <span className="italic text-secondary">Soul.</span>
             </h2>
             <p className="text-xl text-muted-foreground leading-relaxed">
-              In a world of constant noise and digital exhaustion, Lumina was born from a simple question: Can AI be taught to care?
+              In a world of constant noise and digital exhaustion, Lumia was born from a simple question: Can AI be taught to care?
             </p>
           </div>
           <div className="text-muted-foreground leading-relaxed space-y-6 text-lg">

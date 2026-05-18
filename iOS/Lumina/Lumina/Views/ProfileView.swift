@@ -155,7 +155,7 @@ struct ProfileView: View {
         }.joined(separator: "\n")
 
         return """
-        Lumina Export
+        Lumia Export
         Exported: \(exportedAt)
         User: \(appState.userName)
         Bio: \(appState.userBio.isEmpty ? "None" : appState.userBio)
@@ -196,13 +196,7 @@ struct ProfileView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     heroSection
-                    statsGrid
-                    if !appState.chatSessions.isEmpty { recentSessions }
-                    achievementsSection
-                    if let m = latestMetrics { wellnessPulse(m) }
-                    goalsSection
-                    healthContextSection
-                    evaluationSection
+                    quietOverview
                     settingsSection
                     dangerZone
                     appFooter
@@ -271,7 +265,7 @@ struct ProfileView: View {
                 appState.deleteLocalHealthData()
             }
             Button("Cancel", role: .cancel) {}
-        } message: { Text("This removes only Lumina's stored daily health summaries. It does not change your Apple Health data or Health permissions.") }
+        } message: { Text("This removes only Lumia's stored daily health summaries. It does not change your Apple Health data or Health permissions.") }
         .alert("Face ID / Touch ID Unavailable", isPresented: $showBiometricUnavailable) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -283,7 +277,7 @@ struct ProfileView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Lumina will keep local journals, chats, and garden progress on this device.")
+            Text("Lumia will keep local journals, chats, and garden progress on this device.")
         }
     }
 
@@ -371,6 +365,21 @@ struct ProfileView: View {
             ProfileStat(value: "\(appState.waterDrops)💧",     label: "Garden",   icon: "drop.fill",               color: Color(hex: 0x5AC8FA))
         }
         .padding(.horizontal, 16).padding(.bottom, 20)
+        .opacity(appeared ? 1 : 0)
+        .animation(.easeOut(duration: 0.5).delay(0.1), value: appeared)
+    }
+
+    var quietOverview: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Overview", icon: "leaf.fill")
+            HStack(spacing: 10) {
+                ProfileStat(value: "\(appState.entries.count)", label: "Entries", icon: "scroll.fill", color: .organicPrimary)
+                ProfileStat(value: "\(totalSessions)", label: "Chats", icon: "bubble.left.fill", color: Color(hex: 0xC18C5D))
+                ProfileStat(value: "\(completedHabits)", label: "Garden", icon: "leaf.fill", color: Color(hex: 0x4E9C5C))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 18)
         .opacity(appeared ? 1 : 0)
         .animation(.easeOut(duration: 0.5).delay(0.1), value: appeared)
     }
@@ -554,7 +563,7 @@ struct ProfileView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(appState.currentAccount?.displayName ?? "Sign in to Lumina")
+                    Text(appState.currentAccount?.displayName ?? "Sign in to Lumia")
                         .luminaFont(size: 15, weight: .bold)
                         .foregroundColor(.organicForeground)
                     Text(accountStatusDetail)
@@ -617,19 +626,19 @@ struct ProfileView: View {
                     .luminaFont(size: 11, weight: .medium)
                     .foregroundColor(Color(hex: 0xBE185D))
             } else if appState.notificationPermissionState == .denied {
-                Text("Enable notifications in iOS Settings > Notifications > Lumina.")
+                Text("Enable notifications in iOS Settings > Notifications > Lumia.")
                     .luminaFont(size: 11, weight: .medium)
                     .foregroundColor(.organicMutedFg)
             } else if appState.dailyReminderEnabled && appState.jitaiNotificationsEnabled {
-                Text("Daily reminders and smart suggestions are local notifications. Smart suggestions keep quiet hours, daily caps, and suppression.")
+                Text("Reminders stay local and respect quiet hours.")
                     .luminaFont(size: 11, weight: .medium)
                     .foregroundColor(.organicMutedFg)
             } else if appState.jitaiNotificationsEnabled {
-                Text("Smart suggestions only notify after local JITAI rules approve timing, relevance, and fatigue limits.")
+                Text("Gentle suggestions stay within quiet hours and daily limits.")
                     .luminaFont(size: 11, weight: .medium)
                     .foregroundColor(.organicMutedFg)
             } else if appState.dailyReminderEnabled {
-                Text("Lumina schedules one local reminder each day. Smart suggestions are off.")
+                Text("One local reminder each day. Gentle suggestions are off.")
                     .luminaFont(size: 11, weight: .medium)
                     .foregroundColor(.organicMutedFg)
             }
@@ -662,8 +671,7 @@ struct ProfileView: View {
     var appFooter: some View {
         VStack(spacing: 8) {
             Image(systemName: "waveform.path.ecg").luminaFont(size: 26).foregroundColor(.organicPrimary.opacity(0.35))
-            Text("Lumina · v1.0.0").luminaFont(size: 12, weight: .semibold, design: .serif).foregroundColor(.organicMutedFg)
-            Text("Built for your mental wellness journey 🌿").luminaFont(size: 11).foregroundColor(.organicBorder)
+            Text("Lumia · v1.0.0").luminaFont(size: 12, weight: .semibold, design: .serif).foregroundColor(.organicMutedFg)
         }.padding(.vertical, 24)
     }
 
@@ -877,18 +885,18 @@ struct ProfileView: View {
                     groupLabel("PROFILE")
                     settingsRow(icon: "person.fill", bg: .organicPrimary, title: "Display Name", detail: appState.userName, action: onEditName)
                     settingsRow(icon: "text.alignleft", bg: Color(hex: 0x6D28D9), title: "Bio", detail: appState.userBio.isEmpty ? "Not set" : appState.userBio, action: onEditBio)
-                    settingsRow(icon: "sparkles", bg: Color(hex: 0x9A6A22), title: "Lumina AI", detail: "Managed by secure backend", action: onAPIKey)
+                    settingsRow(icon: "sparkles", bg: Color(hex: 0x9A6A22), title: "Connection", detail: "Managed for this app", action: onAPIKey)
 
                     divider
                     groupLabel("HELP")
-                    settingsRow(icon: "questionmark.circle.fill", bg: Color(hex: 0x0F766E), title: "Quick Guide", detail: "Replay the short start screen", action: onQuickGuide)
+                    settingsRow(icon: "questionmark.circle.fill", bg: Color(hex: 0x0F766E), title: "Guide", detail: "Replay the short start screen", action: onQuickGuide)
                 }
                 .background(Color.organicCard)
                 .clipShape(RoundedRectangle(cornerRadius: 20))
                 .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.organicBorder.opacity(0.4), lineWidth: 1))
 
                 settingsDisclosure(
-                    title: "Notifications",
+                    title: "Reminders",
                     subtitle: appState.notificationPermissionLabel,
                     icon: "bell.fill",
                     tint: Color(hex: 0x8F3A4A)
@@ -903,7 +911,7 @@ struct ProfileView: View {
                     toggleRow(
                         icon: "sparkles",
                         bg: Color(hex: 0x0F766E),
-                        title: "Smart Suggestions",
+                        title: "Gentle Suggestions",
                         detail: appState.jitaiNotificationsEnabled ? "On - respects quiet hours" : "Off",
                         value: $appState.jitaiNotificationsEnabled
                     )
@@ -918,7 +926,7 @@ struct ProfileView: View {
                         preferencePickerRow(
                             icon: "number",
                             bg: Color(hex: 0x7A5C16),
-                            title: "Smart Daily Cap",
+                            title: "Daily Cap",
                             detail: "\(appState.jitaiMaxDailyPrompts) per day",
                             selection: $appState.jitaiMaxDailyPrompts,
                             values: Array(1...5),
@@ -978,8 +986,8 @@ struct ProfileView: View {
                     toggleRow(
                         icon: "text.bubble.fill",
                         bg: Color(hex: 0x0F766E),
-                        title: "Use Journal Context in Therapy",
-                        detail: appState.useJournalContextInTherapy ? "On - recent reflections can guide replies" : "Off - Therapy will not use journal summaries",
+                        title: "Let Therapy Remember Journal Themes",
+                        detail: appState.useJournalContextInTherapy ? "On - recent themes may help" : "Off - chats stay separate",
                         value: $appState.useJournalContextInTherapy
                     )
                     settingsRow(
@@ -1014,7 +1022,7 @@ struct ProfileView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(appState.currentAccount?.displayName ?? "Sign in to Lumina")
+                        Text(appState.currentAccount?.displayName ?? "Sign in to Lumia")
                             .luminaFont(size: 15, weight: .bold)
                             .foregroundColor(.organicForeground)
                         Text(accountStatusDetail)
@@ -1105,7 +1113,7 @@ struct ProfileView: View {
 
                     HStack(spacing: 8) {
                         MembershipMiniPill(icon: "phone.fill", title: "Live")
-                        MembershipMiniPill(icon: "chart.line.uptrend.xyaxis", title: "Insights")
+                        MembershipMiniPill(icon: "chart.line.uptrend.xyaxis", title: "Patterns")
                         MembershipMiniPill(icon: "brain.head.profile", title: "Memory")
                     }
                 }
@@ -1151,7 +1159,7 @@ struct ProfileView: View {
                         .luminaFont(size: 11, weight: .medium)
                         .foregroundColor(Color(hex: 0xBE185D))
                 } else if appState.notificationPermissionState == .denied {
-                    Text("Enable notifications in iOS Settings > Notifications > Lumina.")
+                    Text("Enable notifications in iOS Settings > Notifications > Lumia.")
                         .luminaFont(size: 11, weight: .medium)
                         .foregroundColor(.organicMutedFg)
                 } else if appState.dailyReminderEnabled && appState.jitaiNotificationsEnabled {
@@ -1163,7 +1171,7 @@ struct ProfileView: View {
                         .luminaFont(size: 11, weight: .medium)
                         .foregroundColor(.organicMutedFg)
                 } else if appState.dailyReminderEnabled {
-                    Text("Lumina schedules one local reminder each day.")
+                    Text("Lumia schedules one local reminder each day.")
                         .luminaFont(size: 11, weight: .medium)
                         .foregroundColor(.organicMutedFg)
                 }
@@ -1384,22 +1392,23 @@ struct ProfileView: View {
         let privacyLockEnabled: Bool
 
         var body: some View {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 12) {
                     Image("LuminaMark")
                         .renderingMode(.original)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 42, height: 42)
+                        .frame(width: 30, height: 30)
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Control center")
-                            .luminaFont(size: 18, weight: .bold, design: .serif)
+                        Text("Settings")
+                            .luminaFont(size: 17, weight: .bold, design: .serif)
                             .foregroundColor(.organicForeground)
-                        Text("Theme, privacy, data, and permissions in one place.")
+                        Text("Only the things you may need to change.")
                             .luminaFont(size: 12, weight: .medium)
                             .foregroundColor(.organicMutedFg)
+                            .lineLimit(1)
                     }
 
                     Spacer(minLength: 0)
@@ -1407,16 +1416,16 @@ struct ProfileView: View {
 
                 HStack(spacing: 8) {
                     SettingsStatusPill(title: "Theme", value: appearance, icon: "paintpalette.fill", tint: .organicPrimary)
-                    SettingsStatusPill(title: "Notify", value: notifications, icon: "bell.fill", tint: Color(hex: 0xBE185D))
+                    SettingsStatusPill(title: "Reminders", value: notifications, icon: "bell.fill", tint: Color(hex: 0xBE185D))
                     SettingsStatusPill(title: "Lock", value: privacyLockEnabled ? "On" : "Off", icon: "lock.fill", tint: Color(hex: 0x7A5C16))
                 }
             }
-            .padding(16)
-            .background(Color.organicCard)
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .padding(14)
+            .background(Color.organicCard.opacity(0.82))
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(Color.organicBorder.opacity(0.46), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(Color.organicBorder.opacity(0.34), lineWidth: 1)
             }
         }
     }
@@ -1620,7 +1629,7 @@ struct ProfileView: View {
                     .background(Color.organicMuted.opacity(0.62))
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 } else {
-                    Text("Lumina treats these signals as context, not proof of mood or diagnosis. Empty Health categories may stay blank.")
+                    Text("Lumia treats these signals as context, not proof of mood or diagnosis. Empty Health categories may stay blank.")
                         .luminaFont(size: 12, weight: .medium)
                         .foregroundColor(.organicMutedFg)
                         .lineSpacing(2)
@@ -1639,7 +1648,7 @@ struct ProfileView: View {
                         .luminaFont(size: 10, weight: .bold)
                         .foregroundColor(.organicMutedFg)
                         .frame(width: 18, height: 18)
-                    Text("Revoke Health access anytime in iOS Settings > Health > Data Access & Devices > Lumina.")
+                    Text("Revoke Health access anytime in iOS Settings > Health > Data Access & Devices > Lumia.")
                         .luminaFont(size: 11, weight: .medium)
                         .foregroundColor(.organicMutedFg)
                         .lineSpacing(2)
@@ -1732,7 +1741,7 @@ struct ProfileView: View {
                     Text("Use Health as gentle context")
                         .luminaFont(size: 28, weight: .bold, design: .serif)
                         .foregroundColor(.organicForeground)
-                    Text("Lumina can read daily summaries to make check-ins less generic. Health data is never treated as a diagnosis or proof of how you feel.")
+                    Text("Lumia can read daily summaries to make check-ins less generic. Health data is never treated as a diagnosis or proof of how you feel.")
                         .luminaFont(size: 14, weight: .medium)
                         .foregroundColor(.organicMutedFg)
                         .lineSpacing(3)
@@ -1742,8 +1751,8 @@ struct ProfileView: View {
                     HealthPermissionBullet(icon: "bed.double.fill", title: "Daily sleep totals", detail: "Minutes asleep, summarized by day.")
                     HealthPermissionBullet(icon: "figure.walk", title: "Daily activity totals", detail: "Steps, active energy, and exercise minutes.")
                     HealthPermissionBullet(icon: "heart.fill", title: "Heart-rate summaries", detail: "Daily averages only, not raw samples.")
-                    HealthPermissionBullet(icon: "lock.fill", title: "Local control", detail: "You can delete Lumina's stored summaries anytime.")
-                    HealthPermissionBullet(icon: "gearshape.fill", title: "Revoke anytime", detail: "Use iOS Settings > Health > Data Access & Devices > Lumina.")
+                    HealthPermissionBullet(icon: "lock.fill", title: "Local control", detail: "You can delete Lumia's stored summaries anytime.")
+                    HealthPermissionBullet(icon: "gearshape.fill", title: "Revoke anytime", detail: "Use iOS Settings > Health > Data Access & Devices > Lumia.")
                 }
                 .padding(16)
                 .background(Color.organicMuted.opacity(0.72))
@@ -2004,7 +2013,7 @@ struct ProfileView: View {
                         .luminaFont(size: 18, weight: .bold, design: .serif)
                         .foregroundColor(.organicForeground)
                     MembershipFeatureRow(icon: "phone.fill", title: "Live therapy sessions", detail: "Voice sessions with transcript saved back to Therapy when available.")
-                    MembershipFeatureRow(icon: "chart.line.uptrend.xyaxis", title: "Deeper journal insights", detail: "Daily summaries and cross-entry patterns without extra setup.")
+                    MembershipFeatureRow(icon: "chart.line.uptrend.xyaxis", title: "Daily patterns", detail: "Short summaries across entries without extra setup.")
                     MembershipFeatureRow(icon: "brain.head.profile", title: "Doctor memory", detail: "Each guide can keep useful context with clear privacy boundaries.")
                     MembershipFeatureRow(icon: "leaf.fill", title: "Premium Garden loops", detail: "Extra routines, quests, and restorative progress markers.")
                 }
@@ -2063,7 +2072,7 @@ struct ProfileView: View {
                     }
                     .buttonStyle(.plain)
 
-                    Text("Subscription state is synced from Lumina's server. StoreKit or RevenueCat will replace this placeholder before paid release.")
+                    Text("Subscription state is synced from Lumia's server. StoreKit or RevenueCat will replace this placeholder before paid release.")
                         .luminaFont(size: 11, weight: .medium)
                         .foregroundColor(.organicMutedFg)
                         .multilineTextAlignment(.center)
@@ -2105,7 +2114,7 @@ struct ProfileView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 7) {
-                    Text("Lumina Plus")
+                    Text("Lumia Plus")
                         .luminaFont(size: 32, weight: .bold, design: .serif)
                         .foregroundColor(isDark ? Color(hex: 0xF7F2E8) : .organicForeground)
                     Text("More presence when you need it: live sessions, deeper reflections, and memory that stays under your control.")
@@ -2258,7 +2267,7 @@ struct ProfileView: View {
         if let account = appState.currentAccount {
             return "\(account.provider.title) · \(account.primaryContact)"
         }
-        return authMode == .register ? "Save a private Lumina profile on this device." : "Continue with a saved profile or use Apple."
+        return authMode == .register ? "Save a private Lumia profile on this device." : "Continue with a saved profile or use Apple."
     }
 
     var accountSheetHeight: CGFloat {
@@ -2588,7 +2597,7 @@ struct ProfileView: View {
 
     var apiKeySheet: some View {
         ProfileSheetChrome(
-            title: "Lumina AI",
+            title: "Lumia AI",
             saveTitle: isTestingAPIKey ? "Testing..." : "Test",
             canSave: !isTestingAPIKey,
             onCancel: { showAPIKey = false },
@@ -2607,11 +2616,11 @@ struct ProfileView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("AI features are connected through Lumina's secure backend.")
+                    Text("Lumia is connected through the app backend.")
                         .luminaFont(size: 15, weight: .bold)
                         .foregroundColor(.organicForeground)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("Prompts, model choice, and safety rules are updated centrally, so every client gets the same experience.")
+                    Text("Model choice and safety rules update centrally, so every client stays consistent.")
                         .luminaFont(size: 12, weight: .medium)
                         .foregroundColor(.organicMutedFg)
                         .lineSpacing(2)
@@ -2643,7 +2652,7 @@ struct ProfileView: View {
                 HStack(spacing: 8) {
                     ProgressView()
                         .tint(Color.organicPrimary)
-                    Text("Testing Lumina AI connection...")
+                    Text("Testing Lumia connection...")
                         .luminaFont(size: 12, weight: .bold)
                         .foregroundStyle(Color.organicMutedFg)
                 }

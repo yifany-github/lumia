@@ -1612,7 +1612,7 @@ struct CrisisSupportView: View {
                     )
 
                     Button(action: { dismiss() }) {
-                        Text("I am safe, return to Lumina")
+                        Text("I am safe, return to Lumia")
                             .luminaFont(size: 13, weight: .bold)
                             .foregroundColor(.organicMutedFg)
                             .padding(.top, 8)

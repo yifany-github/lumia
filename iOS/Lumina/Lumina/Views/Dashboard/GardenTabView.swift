@@ -1349,7 +1349,7 @@ private struct GardenGameHUD: View {
                     .clipShape(Circle())
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Lumina Grove")
+                    Text("Lumia Grove")
                         .luminaFont(size: 17, weight: .black, design: .rounded)
                         .foregroundColor(Color(hex: 0x24472A))
                         .lineLimit(1)

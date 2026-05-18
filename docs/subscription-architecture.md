@@ -1,6 +1,6 @@
-# Lumina Subscription Architecture
+# Lumia Subscription Architecture
 
-This document defines the first production-ready shape for Lumina memberships across iOS, Android, and Web.
+This document defines the first production-ready shape for Lumia memberships across iOS, Android, and Web.
 
 ## Decision
 
@@ -34,16 +34,16 @@ family
 Recommended first products:
 
 ```text
-lumina_plus_monthly
-lumina_plus_yearly
+lumia_plus_monthly
+lumia_plus_yearly
 ```
 
 Offerings:
 
 ```text
 default
-  monthly -> lumina_plus_monthly
-  yearly  -> lumina_plus_yearly
+  monthly -> lumia_plus_monthly
+  yearly  -> lumia_plus_yearly
 ```
 
 ## Feature Matrix
@@ -94,7 +94,7 @@ Use Firebase Auth `uid` as RevenueCat `appUserID`.
 Firebase Auth uid == RevenueCat appUserID
 ```
 
-This keeps iOS, Android, and Web purchases attached to the same Lumina account.
+This keeps iOS, Android, and Web purchases attached to the same Lumia account.
 
 ## Client Flow
 
@@ -138,4 +138,3 @@ The current implementation adds the entitlement lookup and feature-classificatio
 5. Add RevenueCat webhook function.
 6. Add Web checkout.
 7. Add Android SDK integration.
-

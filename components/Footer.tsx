@@ -13,7 +13,7 @@ const Footer: React.FC = () => {
              <div className="h-10 w-10 bg-primary rounded-full flex items-center justify-center text-primary-foreground">
                <Sparkles size={20} />
              </div>
-             <span className="font-serif font-bold text-xl">Lumina</span>
+             <span className="font-serif font-bold text-xl">Lumia</span>
           </div>
           <p className="text-background/60 dark:text-muted-foreground text-sm leading-relaxed max-w-xs">
             Blending artificial intelligence with human-centric empathy to create a safe space for everyone.
@@ -53,7 +53,7 @@ const Footer: React.FC = () => {
              </a>
            </div>
            <p className="text-xs text-background/40 dark:text-muted-foreground/60">
-             © 2024 Lumina AI. Not a replacement for professional therapy.
+             © 2024 Lumia AI. Not a replacement for professional therapy.
            </p>
         </div>
       </div>

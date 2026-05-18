@@ -176,12 +176,12 @@ private struct JournalTimelineSummary: View {
         ZStack(alignment: .topLeading) {
             JournalReflectionBackdrop(tint: tint)
 
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .center) {
                     HStack(spacing: 8) {
                         Image(systemName: "book.pages.fill")
                             .luminaFont(size: 12, weight: .bold)
-                        Text("Reflection timeline")
+                        Text("Journal")
                             .luminaFont(size: 11, weight: .black)
                             .kerning(1.6)
                             .textCase(.uppercase)
@@ -194,17 +194,16 @@ private struct JournalTimelineSummary: View {
 
                     Spacer()
 
-                    if let latestEntry {
-                        Text(latestEntry.date.uppercased())
-                            .luminaFont(size: 10, weight: .black)
-                            .foregroundColor(.organicMutedFg)
-                            .kerning(1.4)
-                    }
+                    Text(metaLine)
+                        .luminaFont(size: 10, weight: .black)
+                        .foregroundColor(.organicMutedFg)
+                        .kerning(1.2)
+                        .lineLimit(1)
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(latestEntry?.title ?? "Start your reflection trail")
-                        .luminaFont(size: 26, weight: .bold, design: .serif)
+                    Text(latestEntry?.title ?? "Start with one sentence")
+                        .luminaFont(size: 24, weight: .bold, design: .serif)
                         .foregroundColor(.organicForeground)
                         .lineLimit(2)
                         .minimumScaleFactor(0.82)
@@ -213,60 +212,50 @@ private struct JournalTimelineSummary: View {
                         .luminaFont(size: 14, weight: .medium)
                         .foregroundColor(.organicMutedFg)
                         .lineSpacing(3)
-                        .lineLimit(3)
+                        .lineLimit(2)
                 }
 
-                HStack(spacing: 8) {
-                    JournalSummaryStat(value: "\(entryCount)", label: entryCount == 1 ? "entry" : "entries", tint: .organicPrimary)
-                    JournalSummaryStat(value: "\(filteredCount)", label: "showing", tint: .organicSecondary)
-                    JournalSummaryStat(value: averageSentiment.map { "\($0)%" } ?? "--", label: "tone", tint: tint)
+                if entryCount > 0 {
+                    HStack(spacing: 8) {
+                        Label("\(entryCount) \(entryCount == 1 ? "entry" : "entries")", systemImage: "scroll.fill")
+                        if filteredCount != entryCount {
+                            Label("\(filteredCount) showing", systemImage: "line.3.horizontal.decrease.circle")
+                        }
+                        if let averageSentiment {
+                            Label("\(averageSentiment)% tone", systemImage: "waveform.path.ecg")
+                        }
+                    }
+                    .luminaFont(size: 11, weight: .bold)
+                    .foregroundColor(.organicMutedFg)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
                 }
             }
-            .padding(22)
+            .padding(18)
         }
         .frame(maxWidth: .infinity)
-        .frame(minHeight: 220)
-        .clipShape(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .frame(minHeight: 174)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
                 .strokeBorder(Color.organicBorder.opacity(0.72), lineWidth: 1)
         }
-        .shadow(color: Color.black.opacity(0.06), radius: 20, x: 0, y: 10)
+        .shadow(color: Color.black.opacity(0.04), radius: 14, x: 0, y: 8)
+    }
+
+    private var metaLine: String {
+        guard let latestEntry else { return "BEGIN ANYWHERE" }
+        return latestEntry.date.uppercased()
     }
 
     private var summaryCopy: String {
         guard let latestEntry else {
-            return "Capture a thought now and it will appear here for review later."
+            return "Write a little. Come back when you want."
         }
         if let reflection = latestEntry.reflection, !reflection.isEmpty {
             return reflection
         }
         return latestEntry.content
-    }
-}
-
-private struct JournalSummaryStat: View {
-    let value: String
-    let label: String
-    let tint: Color
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(value)
-                .luminaFont(size: 15, weight: .black, design: .serif)
-                .foregroundColor(.organicForeground)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-            Text(label.uppercased())
-                .luminaFont(size: 8, weight: .black)
-                .foregroundColor(.organicMutedFg)
-                .kerning(1.1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(tint.opacity(0.10))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
@@ -772,7 +761,7 @@ private struct JournalEmptyState: View {
                 .clipShape(Circle())
 
             VStack(spacing: 6) {
-                Text(hasEntries ? "No matching reflections" : "Start your reflection trail")
+                Text(hasEntries ? "No matching entries" : "Start with one sentence")
                     .luminaFont(size: 20, weight: .bold, design: .serif)
                     .foregroundColor(.organicForeground)
                     .multilineTextAlignment(.center)

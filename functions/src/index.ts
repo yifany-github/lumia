@@ -10,7 +10,7 @@ const geminiAPIKey = defineSecret("GEMINI_API_KEY");
 const region = "us-central1";
 const model = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
 const liveModel = process.env.GEMINI_LIVE_MODEL || "gemini-2.5-flash-native-audio-preview-12-2025";
-const promptVersion = "lumina-ai-v2-gemini-3-flash";
+const promptVersion = "lumia-ai-v2-gemini-3-flash";
 
 type Role = "user" | "model";
 
@@ -56,7 +56,7 @@ const therapistPrompts: Record<string, string> = {
 };
 
 const baseSafetyPolicy = `
-Lumina product and safety rules:
+Lumia product and safety rules:
 - Provide emotional support and self-help reflection, not diagnosis, treatment, medical advice, or emergency care.
 - Do not claim to detect mental illness.
 - If the user expresses self-harm, suicide, immediate danger, or inability to stay safe, prioritize emergency/crisis resources and nearby human support.
@@ -237,7 +237,7 @@ async function handleFeature(feature: string, payload: Record<string, unknown>, 
 ${therapistPrompt}
 
 Identity and continuity:
-- You are ${therapistName}. Speak as ${therapistName}, not as "Lumina" or "the AI".
+- You are ${therapistName}. Speak as ${therapistName}, not as "Lumia" or "the AI".
 - Keep a stable personality across sessions. If continuity memory is provided, use it lightly to sound like the same guide from earlier conversations.
 - Do not overstate memory. Prefer phrases like "last time we touched on..." or "we can pick that thread back up if it still fits."
 - Never say "recent reflections are about ${therapistName}" unless the user explicitly wrote about the doctor. Treat doctor names in saved therapy metadata as app metadata, not user concerns.
@@ -274,7 +274,7 @@ JSON structure:
       const text = await generateGeminiText({
         apiKey,
         userPrompt,
-        systemInstruction: `You are Lumina's journaling analysis service. ${baseSafetyPolicy}`,
+        systemInstruction: `You are Lumia's journaling analysis service. ${baseSafetyPolicy}`,
         jsonMode: true
       });
       return { analysis: safeParseJSON<unknown>(text), model, promptVersion, feature };
@@ -304,7 +304,7 @@ If no distortions are found, return [].
       const text = await generateGeminiText({
         apiKey,
         userPrompt,
-        systemInstruction: `You are Lumina's CBT reframing service. ${baseSafetyPolicy}`,
+        systemInstruction: `You are Lumia's CBT reframing service. ${baseSafetyPolicy}`,
         jsonMode: true
       });
       return { distortions: safeParseJSON<unknown>(text), model, promptVersion, feature };
@@ -353,7 +353,7 @@ JSON structure:
       const text = await generateGeminiText({
         apiKey,
         userPrompt,
-        systemInstruction: `You are Lumina's psychological data insight service. ${baseSafetyPolicy}`,
+        systemInstruction: `You are Lumia's psychological data insight service. ${baseSafetyPolicy}`,
         jsonMode: true
       });
       return { insights: safeParseJSON<unknown>(text), model, promptVersion, feature };
@@ -393,7 +393,7 @@ export const aiGateway = onRequest(
       if (process.env.ENFORCE_PREMIUM === "true" && requiresPremium(feature) && !entitlement.hasPremiumAccess) {
         sendJSON(res, 402, {
           error: {
-            message: "Lumina Plus is required for this feature.",
+            message: "Lumia Plus is required for this feature.",
             code: "premium_required"
           },
           entitlement

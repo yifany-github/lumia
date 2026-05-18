@@ -1,6 +1,6 @@
-# Lumina - AI Mental Health Sanctuary
+# Lumia - AI Mental Health Sanctuary
 
-Lumina is an AI-powered emotional support application designed to provide a safe, judgment-free space for users to explore their thoughts and feelings. It combines empathetic AI companions, intelligent journaling, and immersive visual relaxation techniques.
+Lumia is an AI-powered emotional support application designed to provide a safe, judgment-free space for users to explore their thoughts and feelings. It combines empathetic AI companions, intelligent journaling, and immersive visual relaxation techniques.
 
 ## 🌟 Key Features
 
@@ -56,4 +56,4 @@ Lumina is an AI-powered emotional support application designed to provide a safe
     ```
 
 ## 🔐 Privacy & Safety
-Lumina is designed as a tool for self-reflection, not a replacement for professional medical help. All AI interactions are prompted with safety guidelines, and a dedicated Crisis Support module is available globally.
+Lumia is designed as a tool for self-reflection, not a replacement for professional medical help. All AI interactions are prompted with safety guidelines, and a dedicated Crisis Support module is available globally.

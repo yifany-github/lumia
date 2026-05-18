@@ -1,14 +1,14 @@
-# Lumina Differentiation and User Research Brief
+# Lumia Differentiation and User Research Brief
 
 Last updated: 2026-05-11
 
 ## Research Signal Summary
 
-Lumina should not position itself as "AI therapy" or a generic meditation/chat app. The strongest defensible position is:
+Lumia should not position itself as "AI therapy" or a generic meditation/chat app. The strongest defensible position is:
 
 > A private, low-pressure emotional support companion that converts moments of stress into tiny, user-controlled support actions, using local context and clear safety boundaries.
 
-This direction is supported by the existing Lumina architecture work:
+This direction is supported by the existing Lumia architecture work:
 
 - Therapy has explicit Listen / Coach / Plan modes.
 - Safety triage and crisis routing run before model generation.
@@ -22,7 +22,7 @@ The main product risk is not "lack of features." It is making users feel watched
 
 1. Demand is real, especially among young adults.
    - NIMH reports that in 2022 more than one in five U.S. adults had any mental illness, and adults 18-25 had the highest prevalence at 36.2%.
-   - This does not mean Lumina should treat mental illness. It means there is a large population with recurring emotional-support needs and access gaps.
+   - This does not mean Lumia should treat mental illness. It means there is a large population with recurring emotional-support needs and access gaps.
 
 2. Mental health apps are crowded but shallow.
    - A JAMA Network Open assessment of 578 mental health apps found common features were mostly psychoeducation, goal setting/habits, and mindfulness.
@@ -30,15 +30,15 @@ The main product risk is not "lack of features." It is making users feel watched
 
 3. Engagement should not be measured as "daily app addiction."
    - BMC Digital Health notes that assuming more frequent engagement is always ideal sets the bar unrealistically high for digital mental health interventions.
-   - Lumina should optimize for successful short sessions, return during need, and completion of tiny support actions.
+   - Lumia should optimize for successful short sessions, return during need, and completion of tiny support actions.
 
 4. Conversational agent attrition is meaningful.
    - A 2024 JMIR systematic review found attrition varied by delivery channel, with messaging-app based conversational interventions showing high attrition.
-   - Lumina should avoid becoming only "another chatbot." Chat should be one mode inside a larger support system.
+   - Lumia should avoid becoming only "another chatbot." Chat should be one mode inside a larger support system.
 
 5. Privacy can be a competitive advantage.
    - The FTC BetterHelp order shows that sensitive mental health data misuse creates major trust damage.
-   - Lumina should make privacy visible in the product itself: local-first defaults, no ad targeting, clear deletion, reason codes, and "why am I seeing this?"
+   - Lumia should make privacy visible in the product itself: local-first defaults, no ad targeting, clear deletion, reason codes, and "why am I seeing this?"
 
 6. Young users use online support but remain skeptical.
    - Hopelab/Common Sense Media's 2024 survey found over half of U.S. teens and young adults surveyed had used at least one app for mental health or well-being, but only 47% of app users found apps at least somewhat helpful.
@@ -46,7 +46,7 @@ The main product risk is not "lack of features." It is making users feel watched
 
 7. Evaluation frameworks emphasize the same foundations.
    - The APA app evaluation model focuses on accessibility, privacy/security, clinical foundation, engagement/usability, and interoperability.
-   - Lumina can use this as a product quality checklist, even if it stays in general wellness / emotional support territory.
+   - Lumia can use this as a product quality checklist, even if it stays in general wellness / emotional support territory.
 
 ## Target User Segments
 
@@ -63,7 +63,7 @@ Core jobs:
 - "I want one tiny thing I can actually do today."
 - "I do not want a clinical label."
 
-Best Lumina surfaces:
+Best Lumia surfaces:
 - Home: quiet state summary and one suggested action.
 - Sanctuary: 30-90 second stabilization.
 - Therapy: Listen / Coach / Plan.
@@ -80,7 +80,7 @@ Core jobs:
 - "Help me turn therapy insight into a small behavior."
 - "Help me track patterns without overanalyzing myself."
 
-Best Lumina surfaces:
+Best Lumia surfaces:
 - Therapy session summaries.
 - Journal timeline and tags.
 - Micro-plans and follow-ups.
@@ -97,7 +97,7 @@ Core jobs:
 - "Do not sell, share, or overcollect sensitive data."
 - "Explain why you suggested this."
 
-Best Lumina surfaces:
+Best Lumia surfaces:
 - Data control center.
 - Local-first storage explanation.
 - Health context with derived summaries only.
@@ -111,7 +111,7 @@ Profile:
 Important caution:
 - Do not claim this segment until the product has participatory research, localization, crisis routing, and stronger safety testing.
 
-## Who Lumina Is Not For Initially
+## Who Lumia Is Not For Initially
 
 - Acute crisis as the primary use case.
 - Diagnosis, treatment decisions, medication guidance, or replacing therapy.
@@ -131,9 +131,9 @@ Current market patterns:
 - Mood trackers/journals: good capture, weak intervention and follow-through.
 - Habit apps: action-oriented, often too performance-driven for emotional distress.
 
-### Lumina's Wedge
+### Lumia's Wedge
 
-Lumina should be:
+Lumia should be:
 
 > The emotional support app for people who do not want pressure, diagnosis, or endless content, but do want one calm next step.
 
@@ -171,7 +171,7 @@ Concrete differentiators:
    - Prefer "steady / tender / overloaded / recovering" over numeric performance language unless needed.
 
 4. Make every intervention user-initiated or explainable.
-   - If Lumina suggests something, it must be able to say why.
+   - If Lumia suggests something, it must be able to say why.
 
 5. Keep clinical claims out of UI.
    - Use "support," "practice," "reset," "reflection," "small step."
@@ -265,13 +265,13 @@ Differentiation:
    - "Turn feelings into one small step"
    - "A gentle companion between therapy sessions"
 
-2. Which target segment understands Lumina fastest?
+2. Which target segment understands Lumia fastest?
    - Young professionals.
    - College students.
    - Therapy-adjacent adults.
    - Privacy-sensitive self-helpers.
 
-3. What makes users trust or distrust Lumina?
+3. What makes users trust or distrust Lumia?
    - AI label.
    - Health data.
    - Personas.
@@ -299,7 +299,7 @@ Differentiation:
    - Track: moments opened, chosen actions, perceived helpfulness, annoyance.
 
 4. Privacy comprehension test.
-   - Ask users what data Lumina uses and why.
+   - Ask users what data Lumia uses and why.
    - If they cannot answer, the UI is not transparent enough.
 
 5. Retention without guilt.
