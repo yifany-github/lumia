@@ -1,10 +1,10 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
 import { 
   Send, Menu, Plus, MessageSquare, Settings, LogOut, 
   MoreHorizontal, Phone, Video, Mic, Paperclip, X,
   Sidebar as SidebarIcon, Sparkles, Activity, Zap, TrendingUp, Home,
   MicOff, VideoOff, Camera, Loader2, Download, Trash2, FileText, Info,
-  Check, Smile, Volume2, ArrowLeft
+  Check, Smile, Volume2, ArrowLeft, BrainCircuit
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
@@ -15,6 +15,14 @@ import Button from './Button';
 import { ButtonVariant } from '../types';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import ThoughtReframer from './ThoughtReframer';
+import { useSpeechInput } from '../hooks/useSpeechInput';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  createTherapySessionRecord,
+  deleteTherapySession,
+  fetchLatestTherapySession,
+  saveTherapySession
+} from '../services/therapySessionService';
 
 interface FullChatInterfaceProps {
   initialTherapist: Therapist | null;
@@ -73,8 +81,12 @@ const markdownComponents = {
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
 const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist, onLogout, onBack, userAvatar, userName }) => {
+  const { currentUser } = useAuth();
   const [activeTherapist, setActiveTherapist] = useState<Therapist>(initialTherapist || therapists[0]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [sessionId, setSessionId] = useState(generateId);
+  const [isRestoringSession, setIsRestoringSession] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'saving' | 'saved' | 'offline'>('idle');
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -105,11 +117,48 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
   // Refs for transcription
   const currentModelTextRef = useRef('');
   const currentUserTextRef = useRef('');
+  const lastSavedSignatureRef = useRef('');
+
+  const appendVoiceTranscript = useCallback((text: string) => {
+    setInput(prev => `${prev}${prev.trim() ? ' ' : ''}${text}`.trimStart());
+  }, []);
+
+  const voiceInput = useSpeechInput({ onTranscript: appendVoiceTranscript });
 
   useEffect(() => {
-    if (messages.length === 0) {
-      setMessages([{ id: 'welcome', role: 'model', text: activeTherapist.greeting }]);
+    const fallbackSessionId = generateId();
+    let isCancelled = false;
+    setIsRestoringSession(Boolean(currentUser));
+    setSessionId(fallbackSessionId);
+    setSyncStatus('idle');
+    setMessages([{ id: 'welcome', role: 'model', text: activeTherapist.greeting }]);
+
+    if (currentUser) {
+      fetchLatestTherapySession(currentUser.uid, activeTherapist.id)
+        .then((session) => {
+          if (isCancelled || !session) return;
+          setSessionId(session.id);
+          setMessages(session.messages.length ? session.messages : [{ id: 'welcome', role: 'model', text: activeTherapist.greeting }]);
+          setMetrics({
+            baseline: session.metrics.wellness,
+            clarity: session.metrics.clarity,
+            calm: session.metrics.calm,
+            energy: session.metrics.energy
+          });
+          lastSavedSignatureRef.current = JSON.stringify(session.messages);
+          setSyncStatus('saved');
+        })
+        .catch((error) => {
+          console.warn('Failed to restore therapy session', error);
+          if (!isCancelled) setSyncStatus('offline');
+        })
+        .finally(() => {
+          if (!isCancelled) setIsRestoringSession(false);
+        });
+    } else {
+      setIsRestoringSession(false);
     }
+
     const handleClickOutside = (event: MouseEvent) => {
       if (moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
         setIsMoreMenuOpen(false);
@@ -117,10 +166,39 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
+      isCancelled = true;
       cleanupResources();
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [activeTherapist]);
+  }, [activeTherapist.id, currentUser?.uid]);
+
+  useEffect(() => {
+    if (!currentUser || isRestoringSession || messages.length === 0) return;
+    const signature = JSON.stringify(messages);
+    if (signature === lastSavedSignatureRef.current) return;
+
+    setSyncStatus('saving');
+    const saveTimer = window.setTimeout(() => {
+      const session = createTherapySessionRecord(sessionId, activeTherapist.id, messages, {
+        wellness: metrics.baseline,
+        clarity: metrics.clarity,
+        calm: metrics.calm,
+        energy: metrics.energy
+      });
+
+      saveTherapySession(currentUser.uid, session)
+        .then(() => {
+          lastSavedSignatureRef.current = signature;
+          setSyncStatus('saved');
+        })
+        .catch((error) => {
+          console.warn('Failed to sync therapy session', error);
+          setSyncStatus('offline');
+        });
+    }, 700);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [activeTherapist.id, currentUser, isRestoringSession, messages, metrics, sessionId]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -209,14 +287,14 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
   const startCall = async () => {
     if (isCallActive) return;
 
-    // 1. Check API Key Availability
+    // 1. Check backend AI availability
     const hasKey = await checkApiKeyAvailability();
     if (!hasKey) {
       try {
         await openApiKeySelector();
         setApiKeyMissing(false);
       } catch (e) {
-        console.error("Failed to select API key", e);
+        console.error("Failed to open sign-in", e);
         return;
       }
     }
@@ -229,11 +307,9 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
     playDialTone();
 
     try {
-      // Re-fetch env var after potential selection
       const apiKey = process.env.API_KEY || '';
       if (!apiKey) {
-         console.warn("API Key is still missing after selection");
-         // We continue, hoping the SDK handles it or it was injected
+         console.warn("Live voice still requires a server-side realtime gateway before production use.");
       }
       
       const ai = new GoogleGenAI({ apiKey });
@@ -242,7 +318,7 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
       mediaStreamRef.current = stream;
 
       const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        model: 'gemini-3.1-flash-live-preview',
         config: {
           responseModalities: [Modality.AUDIO],
           speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: activeTherapist.voiceName || 'Zephyr' } } },
@@ -446,7 +522,10 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
-    const userMsg: ChatMessage = { id: generateId(), role: 'user', text: input };
+    if (voiceInput.isListening) voiceInput.stop();
+
+    const messageText = input.trim();
+    const userMsg: ChatMessage = { id: generateId(), role: 'user', text: messageText };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
@@ -454,7 +533,7 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
     try {
       const history = messages.slice(-8).map(m => `${m.role}: ${m.text}`).join('\n');
       const sysPrompt = `You are ${activeTherapist.name}. ${activeTherapist.systemInstruction}`;
-      const response = await generateTherapistResponse(history + `\nuser: ${input}`, sysPrompt);
+      const response = await generateTherapistResponse(history + `\nuser: ${messageText}`, sysPrompt);
       
       if (response === "ERROR_API_KEY_MISSING") {
         setApiKeyMissing(true);
@@ -574,7 +653,7 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
               <h4 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-4 px-2 font-sans">Sanctuary Guides</h4>
               <div className="space-y-2">
                 {therapists.map(t => (
-                  <button key={t.id} onClick={() => { setActiveTherapist(t); setMessages([{id: generateId(), role: 'model', text: t.greeting}]); if(window.innerWidth < 1024) setIsSidebarOpen(false); }} 
+                  <button key={t.id} onClick={() => { setActiveTherapist(t); if(window.innerWidth < 1024) setIsSidebarOpen(false); }} 
                     className={`w-full flex items-center gap-4 p-4 rounded-2xl text-sm transition-all ${activeTherapist.id === t.id ? 'bg-card shadow-md font-bold text-foreground border border-border/40' : 'text-muted-foreground hover:bg-card/50 hover:text-foreground'}`}>
                     <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-background shadow-sm shrink-0"><img src={t.avatarUrl} className="w-full h-full object-cover" /></div>
                     <div className="text-left">
@@ -606,7 +685,10 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
                <img src={activeTherapist.avatarUrl} className="w-10 h-10 md:w-12 md:h-12 rounded-2xl border-2 border-background shadow-md" />
                <div className="hidden sm:block">
                  <h2 className="font-serif font-bold text-xl text-foreground leading-tight">{activeTherapist.name}</h2>
-                 <p className="text-[10px] uppercase font-bold text-green-500 tracking-widest flex items-center gap-1 font-sans"><span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" /> Listening</p>
+                 <p className="text-[10px] uppercase font-bold text-green-500 tracking-widest flex items-center gap-1 font-sans">
+                   <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
+                   {isRestoringSession ? 'Restoring' : syncStatus === 'saving' ? 'Saving' : syncStatus === 'offline' ? 'Local only' : 'Listening'}
+                 </p>
                </div>
             </div>
           </div>
@@ -621,7 +703,15 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
                      <div className="absolute right-0 mt-4 w-60 bg-card rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-border/30 p-2 z-[60] animate-in zoom-in-95">
                          <button onClick={handleSaveChat} className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-muted text-sm font-bold transition-all"><Download size={20} className="text-primary" /> Export Session</button>
                          <button onClick={onBack} className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-muted text-sm font-bold transition-all"><Home size={20} className="text-secondary" /> Dashboard</button>
-                         <button onClick={() => setMessages([{id: generateId(), role: 'model', text: activeTherapist.greeting}])} className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 text-sm font-bold transition-all"><Trash2 size={20} /> Clear Journey</button>
+                         <button onClick={() => {
+                           const clearedSessionId = sessionId;
+                           setSessionId(generateId());
+                           setMessages([{id: 'welcome', role: 'model', text: activeTherapist.greeting}]);
+                           setIsMoreMenuOpen(false);
+                           if (currentUser) {
+                             deleteTherapySession(currentUser.uid, clearedSessionId).catch((error) => console.warn('Failed to delete therapy session', error));
+                           }
+                         }} className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 text-sm font-bold transition-all"><Trash2 size={20} /> Clear Journey</button>
                      </div>
                  )}
              </div>
@@ -644,20 +734,37 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
         </div>
 
         <div className="p-6 md:p-10 bg-gradient-to-t from-background via-background to-transparent relative z-20">
-           <div className="max-w-4xl mx-auto bg-card rounded-[2.5rem] border border-border/60 shadow-[0_15px_60px_-15px_rgba(0,0,0,0.1)] focus-within:ring-4 focus-within:ring-primary/5 transition-all p-2 flex items-end">
-              <button className="p-4 text-muted-foreground hover:text-primary transition-colors" title="Attach File"><Paperclip size={22} /></button>
-              <button 
-                onClick={() => {
-                  setReframerInitialThought(input);
-                  setIsReframerOpen(true);
-                }} 
-                className="p-4 text-muted-foreground hover:text-primary transition-colors"
-                title="Reframe Thought"
-              >
-                <BrainCircuit size={22} />
-              </button>
-              <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} placeholder="Share what's on your mind..." className="flex-1 min-h-[56px] max-h-40 py-4 px-2 bg-transparent border-none focus:ring-0 text-foreground font-serif text-lg md:text-xl resize-none" />
-              <button onClick={handleSend} disabled={!input.trim() || isLoading} className={`p-4 md:p-5 rounded-[1.5rem] md:rounded-[2rem] text-white transition-all shadow-xl ${!input.trim() || isLoading ? 'bg-muted text-muted-foreground shadow-none' : activeTherapist.bgClass + ' hover:scale-105 active:scale-95'}`}><Send size={24} /></button>
+           <div className="max-w-4xl mx-auto">
+             <div className="bg-card rounded-[2.5rem] border border-border/60 shadow-[0_15px_60px_-15px_rgba(0,0,0,0.1)] focus-within:ring-4 focus-within:ring-primary/5 transition-all p-2 flex items-end">
+                <button className="p-4 text-muted-foreground hover:text-primary transition-colors" title="Attach File"><Paperclip size={22} /></button>
+                <button 
+                  onClick={() => {
+                    setReframerInitialThought(input);
+                    setIsReframerOpen(true);
+                  }} 
+                  className="p-4 text-muted-foreground hover:text-primary transition-colors"
+                  title="Reframe Thought"
+                >
+                  <BrainCircuit size={22} />
+                </button>
+                <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} placeholder="Share what's on your mind..." className="flex-1 min-h-[56px] max-h-40 py-4 px-2 bg-transparent border-none focus:ring-0 text-foreground font-serif text-lg md:text-xl resize-none" />
+                <button
+                  onClick={voiceInput.toggle}
+                  disabled={!voiceInput.isSupported || isLoading}
+                  className={`p-4 md:p-5 rounded-[1.5rem] md:rounded-[2rem] transition-all ${voiceInput.isListening ? 'bg-red-500 text-white shadow-xl shadow-red-500/20' : 'text-muted-foreground hover:text-primary hover:bg-muted'} disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground`}
+                  title={voiceInput.isSupported ? (voiceInput.isListening ? 'Stop voice input' : 'Start voice input') : 'Voice input is not supported in this browser'}
+                  aria-label={voiceInput.isListening ? 'Stop voice input' : 'Start voice input'}
+                >
+                  {voiceInput.isListening ? <MicOff size={24} /> : <Mic size={24} />}
+                </button>
+                <button onClick={handleSend} disabled={!input.trim() || isLoading} className={`p-4 md:p-5 rounded-[1.5rem] md:rounded-[2rem] text-white transition-all shadow-xl ${!input.trim() || isLoading ? 'bg-muted text-muted-foreground shadow-none' : activeTherapist.bgClass + ' hover:scale-105 active:scale-95'}`}><Send size={24} /></button>
+             </div>
+             {(voiceInput.isListening || voiceInput.interimTranscript || voiceInput.error) && (
+               <div className="mt-3 px-5 text-xs font-bold text-muted-foreground flex items-center gap-2">
+                 <span className={`w-2 h-2 rounded-full ${voiceInput.error ? 'bg-red-400' : 'bg-primary animate-pulse'}`} />
+                 <span>{voiceInput.error || voiceInput.interimTranscript || 'Listening...'}</span>
+               </div>
+             )}
            </div>
         </div>
       </main>
@@ -678,8 +785,8 @@ const FullChatInterface: React.FC<FullChatInterfaceProps> = ({ initialTherapist,
               <div className="bg-card rounded-[3rem] p-10 max-w-md text-center shadow-2xl animate-in zoom-in-95">
                   <div className="w-20 h-20 bg-red-100 dark:bg-red-900/40 text-red-500 rounded-full flex items-center justify-center mx-auto mb-8"><Volume2 size={40} /></div>
                   <h3 className="text-3xl font-serif font-bold mb-4">Connection Required</h3>
-                  <p className="text-muted-foreground mb-10 leading-relaxed font-sans">Please verify your Google AI sanctuary (API Key) to use Live features.</p>
-                  <Button onClick={() => openApiKeySelector().then(() => setApiKeyMissing(false))} className="w-full h-16 text-lg">Verify Presence</Button>
+                  <p className="text-muted-foreground mb-10 leading-relaxed font-sans">Sign in so Lumina can connect securely to the AI backend.</p>
+                  <Button onClick={() => openApiKeySelector().then(() => setApiKeyMissing(false))} className="w-full h-16 text-lg">Sign In</Button>
               </div>
           </div>
       )}

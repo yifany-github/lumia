@@ -1,23 +1,24 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useMemo, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
-import HowItWorks from './components/HowItWorks';
 import TherapistSelection, { therapists } from './components/TherapistSelection';
-import ChatSession from './components/ChatSession';
-import SelfCareToolkit from './components/SelfCareToolkit';
-import DiscoverySection from './components/DiscoverySection';
-import StatsSection from './components/StatsSection';
-import PhilosophySection from './components/PhilosophySection';
-import Footer from './components/Footer';
-import BreathingExercise from './components/BreathingExercise';
-import CrisisSupport from './components/CrisisSupport';
-import AuthModal from './components/AuthModal';
-import ProfileModal from './components/ProfileModal';
-import FullChatInterface from './components/FullChatInterface';
-import Dashboard from './components/Dashboard';
-import AdminPanel from './components/AdminPanel';
 import { Therapist, JournalEntry } from './types';
 import { useAuth } from './contexts/AuthContext';
+
+const HowItWorks = lazy(() => import('./components/HowItWorks'));
+const ChatSession = lazy(() => import('./components/ChatSession'));
+const SelfCareToolkit = lazy(() => import('./components/SelfCareToolkit'));
+const DiscoverySection = lazy(() => import('./components/DiscoverySection'));
+const StatsSection = lazy(() => import('./components/StatsSection'));
+const PhilosophySection = lazy(() => import('./components/PhilosophySection'));
+const Footer = lazy(() => import('./components/Footer'));
+const BreathingExercise = lazy(() => import('./components/BreathingExercise'));
+const CrisisSupport = lazy(() => import('./components/CrisisSupport'));
+const AuthModal = lazy(() => import('./components/AuthModal'));
+const ProfileModal = lazy(() => import('./components/ProfileModal'));
+const FullChatInterface = lazy(() => import('./components/FullChatInterface'));
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
 
 // Initial Mock Data moved from Dashboard to App
 const initialEntries: JournalEntry[] = [
@@ -32,7 +33,7 @@ const initialEntries: JournalEntry[] = [
     reflection: 'Light often serves as an anchor to past comforts.',
     actionItem: 'Spend 10 minutes in the sun tomorrow.',
     image: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=2070&auto=format&fit=crop',
-    visualizerSettings: { particleSize: 2, intensity: 2, sensitivity: 90 },
+    visualizerSettings: { particleSize: 2, intensity: 2, sensitivity: 90, density: 70, enabled: true },
     sentimentScore: 85,
     energyLevel: 60,
     anxietyLevel: 10
@@ -83,6 +84,23 @@ const initialEntries: JournalEntry[] = [
 
 type AppView = 'landing' | 'dashboard' | 'chat' | 'admin';
 
+const DEFAULT_AVATAR = "https://api.dicebear.com/7.x/notionists/svg?seed=John&backgroundColor=ffdfbf";
+
+const AppLoadingState: React.FC<{ label?: string }> = ({ label = 'Loading Lumina' }) => (
+  <div className="min-h-screen bg-background text-foreground flex items-center justify-center px-6">
+    <div className="rounded-3xl border border-border/60 bg-card/80 px-6 py-5 shadow-sm">
+      <div className="h-2 w-36 overflow-hidden rounded-full bg-muted">
+        <div className="h-full w-1/2 animate-pulse rounded-full bg-primary/50" />
+      </div>
+      <p className="mt-4 text-sm font-medium text-muted-foreground">{label}</p>
+    </div>
+  </div>
+);
+
+const SectionLoadingState: React.FC = () => (
+  <div className="mx-auto my-14 h-24 max-w-5xl rounded-[2rem] border border-border/50 bg-card/55" />
+);
+
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>('landing');
   const [activeTherapist, setActiveTherapist] = useState<Therapist | null>(null);
@@ -98,6 +116,12 @@ const App: React.FC = () => {
   const isLoggedIn = !!currentUser;
   
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  useEffect(() => {
+    const openAuth = () => setIsAuthModalOpen(true);
+    window.addEventListener("lumina:show-auth", openAuth);
+    return () => window.removeEventListener("lumina:show-auth", openAuth);
+  }, []);
   
   // Profile Modal State
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -226,21 +250,23 @@ const App: React.FC = () => {
 
   if (currentView === 'chat') {
     return (
-      <FullChatInterface 
-        initialTherapist={activeTherapist} 
-        onLogout={handleLogout}
-        onBack={handleBackFromChat}
-        userAvatar={currentUser?.photoURL || "https://api.dicebear.com/7.x/notionists/svg?seed=John&backgroundColor=ffdfbf"}
-        userName={currentUser?.displayName || "User"}
-      />
+      <Suspense fallback={<AppLoadingState label="Opening therapy room" />}>
+        <FullChatInterface
+          initialTherapist={activeTherapist}
+          onLogout={handleLogout}
+          onBack={handleBackFromChat}
+          userAvatar={currentUser?.photoURL || DEFAULT_AVATAR}
+          userName={currentUser?.displayName || "User"}
+        />
+      </Suspense>
     );
   }
 
   if (currentView === 'dashboard' && isLoggedIn) {
       return (
-        <>
-          <Dashboard 
-            userAvatar={currentUser?.photoURL || "https://api.dicebear.com/7.x/notionists/svg?seed=John&backgroundColor=ffdfbf"}
+        <Suspense fallback={<AppLoadingState label="Opening dashboard" />}>
+          <Dashboard
+            userAvatar={currentUser?.photoURL || DEFAULT_AVATAR}
             userName={currentUser?.displayName || "User"}
             entries={entries}
             setEntries={setEntries}
@@ -248,24 +274,30 @@ const App: React.FC = () => {
             onLogout={handleLogout}
             onOpenProfile={() => setIsProfileOpen(true)}
           />
-          <ProfileModal 
-            isOpen={isProfileOpen}
-            onClose={() => setIsProfileOpen(false)}
-            userAvatar={currentUser?.photoURL || "https://api.dicebear.com/7.x/notionists/svg?seed=John&backgroundColor=ffdfbf"}
-            userName={currentUser?.displayName || "User"}
-            onUpdateUser={handleUpdateUser}
-            stats={stats}
-            onExportData={handleExportData}
-            onLogout={handleLogout}
-            onDeleteAccount={handleDeleteAccount}
-            onOpenAdmin={() => setCurrentView('admin')}
-          />
-        </>
+          {isProfileOpen && (
+            <ProfileModal
+              isOpen={isProfileOpen}
+              onClose={() => setIsProfileOpen(false)}
+              userAvatar={currentUser?.photoURL || DEFAULT_AVATAR}
+              userName={currentUser?.displayName || "User"}
+              onUpdateUser={handleUpdateUser}
+              stats={stats}
+              onExportData={handleExportData}
+              onLogout={handleLogout}
+              onDeleteAccount={handleDeleteAccount}
+              onOpenAdmin={() => setCurrentView('admin')}
+            />
+          )}
+        </Suspense>
       );
   }
 
   if (currentView === 'admin' && isLoggedIn) {
-    return <AdminPanel onBack={() => setCurrentView('dashboard')} />;
+    return (
+      <Suspense fallback={<AppLoadingState label="Opening admin" />}>
+        <AdminPanel onBack={() => setCurrentView('dashboard')} />
+      </Suspense>
+    );
   }
 
   // Default: Landing Page
@@ -276,7 +308,7 @@ const App: React.FC = () => {
         onLoginClick={() => setIsAuthModalOpen(true)}
         onLogoutClick={handleLogout}
         onEnterApp={() => setCurrentView('dashboard')}
-        userAvatar={currentUser?.photoURL || "https://api.dicebear.com/7.x/notionists/svg?seed=John&backgroundColor=ffdfbf"}
+        userAvatar={currentUser?.photoURL || DEFAULT_AVATAR}
         userName={currentUser?.displayName || "User"}
         onOpenProfile={() => setIsProfileOpen(true)}
         theme={theme}
@@ -284,45 +316,56 @@ const App: React.FC = () => {
       />
       <main>
         <Hero />
-        <HowItWorks />
-        <TherapistSelection 
-          onSelect={handleTherapistSelect} 
-          selectedId={activeTherapist?.id}
-        />
-        <ChatSession 
-          therapist={activeTherapist} 
-          initialPrompt={initialChatPrompt}
-          isLoggedIn={isLoggedIn}
-          onShowAuth={() => setIsAuthModalOpen(true)}
-        />
-        <SelfCareToolkit 
-          onOpenBreathing={() => setIsBreathingOpen(true)}
-          onOpenCrisis={() => setIsCrisisOpen(true)}
-        />
-        <DiscoverySection onStartSession={handleStartSession} />
-        <StatsSection />
-        <PhilosophySection />
+        <Suspense fallback={<SectionLoadingState />}>
+          <HowItWorks />
+          <TherapistSelection
+            onSelect={handleTherapistSelect}
+            selectedId={activeTherapist?.id}
+          />
+          <ChatSession
+            therapist={activeTherapist}
+            initialPrompt={initialChatPrompt}
+            isLoggedIn={isLoggedIn}
+            onShowAuth={() => setIsAuthModalOpen(true)}
+          />
+          <SelfCareToolkit
+            onOpenBreathing={() => setIsBreathingOpen(true)}
+            onOpenCrisis={() => setIsCrisisOpen(true)}
+          />
+          <DiscoverySection onStartSession={handleStartSession} />
+          <StatsSection />
+          <PhilosophySection />
+        </Suspense>
       </main>
-      <Footer />
+      <Suspense fallback={null}>
+        <Footer />
+      </Suspense>
 
-      {/* Modals */}
-      <BreathingExercise 
-        isOpen={isBreathingOpen} 
-        onClose={() => setIsBreathingOpen(false)} 
-      />
-      <CrisisSupport 
-        isOpen={isCrisisOpen} 
-        onClose={() => setIsCrisisOpen(false)} 
-      />
-      <AuthModal 
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        onLogin={handleLoginSuccess}
-      />
-      <ProfileModal 
+      <Suspense fallback={null}>
+        {isBreathingOpen && (
+          <BreathingExercise
+            isOpen={isBreathingOpen}
+            onClose={() => setIsBreathingOpen(false)}
+          />
+        )}
+        {isCrisisOpen && (
+          <CrisisSupport
+            isOpen={isCrisisOpen}
+            onClose={() => setIsCrisisOpen(false)}
+          />
+        )}
+        {isAuthModalOpen && (
+          <AuthModal
+            isOpen={isAuthModalOpen}
+            onClose={() => setIsAuthModalOpen(false)}
+            onLogin={handleLoginSuccess}
+          />
+        )}
+        {isProfileOpen && (
+          <ProfileModal
             isOpen={isProfileOpen}
             onClose={() => setIsProfileOpen(false)}
-            userAvatar={currentUser?.photoURL || "https://api.dicebear.com/7.x/notionists/svg?seed=John&backgroundColor=ffdfbf"}
+            userAvatar={currentUser?.photoURL || DEFAULT_AVATAR}
             userName={currentUser?.displayName || "User"}
             onUpdateUser={handleUpdateUser}
             stats={stats}
@@ -330,7 +373,9 @@ const App: React.FC = () => {
             onLogout={handleLogout}
             onDeleteAccount={handleDeleteAccount}
             onOpenAdmin={() => setCurrentView('admin')}
-      />
+          />
+        )}
+      </Suspense>
     </div>
   );
 };

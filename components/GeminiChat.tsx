@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, Loader2, User } from 'lucide-react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
+import { Send, Sparkles, Loader2, User, Mic, MicOff } from 'lucide-react';
 import { generateTherapistResponse } from '../services/geminiService';
 import { ChatMessage, ButtonVariant } from '../types';
 import Button from './Button';
+import { useSpeechInput } from '../hooks/useSpeechInput';
 
 const GeminiChat: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -15,6 +16,10 @@ const GeminiChat: React.FC = () => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const appendVoiceTranscript = useCallback((text: string) => {
+    setInput(prev => `${prev}${prev.trim() ? ' ' : ''}${text}`.trimStart());
+  }, []);
+  const voiceInput = useSpeechInput({ onTranscript: appendVoiceTranscript });
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -24,11 +29,13 @@ const GeminiChat: React.FC = () => {
 
   const handleSend = async () => {
     if (!input.trim()) return;
+    if (voiceInput.isListening) voiceInput.stop();
 
+    const messageText = input.trim();
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
-      text: input
+      text: messageText
     };
 
     setMessages(prev => [...prev, userMsg]);
@@ -123,8 +130,17 @@ const GeminiChat: React.FC = () => {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                 placeholder="How do I care for a bonsai?"
-                className="w-full h-14 pl-6 pr-14 rounded-full border border-border bg-white/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all text-foreground placeholder:text-muted-foreground/70"
+                className="w-full h-14 pl-6 pr-24 rounded-full border border-border bg-white/50 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all text-foreground placeholder:text-muted-foreground/70"
               />
+              <button
+                onClick={voiceInput.toggle}
+                disabled={!voiceInput.isSupported || isLoading}
+                className={`absolute right-14 w-10 h-10 rounded-full flex items-center justify-center transition-all ${voiceInput.isListening ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-muted-foreground hover:text-primary hover:bg-primary/10'} disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground`}
+                title={voiceInput.isSupported ? (voiceInput.isListening ? 'Stop voice input' : 'Start voice input') : 'Voice input is not supported in this browser'}
+                aria-label={voiceInput.isListening ? 'Stop voice input' : 'Start voice input'}
+              >
+                {voiceInput.isListening ? <MicOff size={18} /> : <Mic size={18} />}
+              </button>
               <button 
                 onClick={handleSend}
                 disabled={isLoading || !input.trim()}
@@ -133,6 +149,12 @@ const GeminiChat: React.FC = () => {
                 <Send size={18} />
               </button>
             </div>
+            {(voiceInput.isListening || voiceInput.interimTranscript || voiceInput.error) && (
+              <div className="mt-2 px-5 text-xs font-bold text-muted-foreground flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${voiceInput.error ? 'bg-red-400' : 'bg-primary animate-pulse'}`} />
+                <span>{voiceInput.error || voiceInput.interimTranscript || 'Listening...'}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>

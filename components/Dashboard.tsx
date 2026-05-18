@@ -387,7 +387,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       if (h.id === id && h.plantType !== 'tree') {
         const currentGrowth = h.growth || 0;
         const newGrowth = Math.min(100, currentGrowth + 20);
-        let nextType = h.plantType;
+        let nextType: Habit['plantType'] = h.plantType;
         
         if (newGrowth >= 100) nextType = 'tree';
         else if (newGrowth >= 60) nextType = 'flower';

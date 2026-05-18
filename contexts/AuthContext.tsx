@@ -1,16 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { 
-  User, 
-  onAuthStateChanged, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  signOut,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  updateProfile
-} from 'firebase/auth';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { auth, storage } from '../firebase';
+import type { User } from 'firebase/auth';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -26,6 +15,65 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+type FirebaseAuthModule = typeof import('firebase/auth');
+type FirebaseFirestoreModule = typeof import('firebase/firestore');
+type FirebaseStorageModule = typeof import('firebase/storage');
+
+interface FirebaseRuntime {
+  auth: import('firebase/auth').Auth | null;
+  db: import('firebase/firestore').Firestore | null;
+  storage: import('firebase/storage').FirebaseStorage | null;
+  authModule: FirebaseAuthModule;
+  firestoreModule: FirebaseFirestoreModule;
+  storageModule: FirebaseStorageModule;
+}
+
+const hasFirebaseConfig = Boolean(import.meta.env.VITE_FIREBASE_API_KEY);
+let firebaseRuntimePromise: Promise<FirebaseRuntime> | null = null;
+
+const loadFirebaseRuntime = async (): Promise<FirebaseRuntime> => {
+  if (!hasFirebaseConfig) {
+    throw new Error("Firebase not initialized");
+  }
+
+  firebaseRuntimePromise ||= Promise.all([
+    import('../firebase'),
+    import('firebase/auth'),
+    import('firebase/firestore'),
+    import('firebase/storage')
+  ]).then(([firebase, authModule, firestoreModule, storageModule]) => ({
+    auth: firebase.auth,
+    db: firebase.db,
+    storage: firebase.storage,
+    authModule,
+    firestoreModule,
+    storageModule
+  }));
+
+  return firebaseRuntimePromise;
+};
+
+const syncUserProfile = async (
+  runtime: FirebaseRuntime,
+  user: User,
+  displayName?: string
+) => {
+  const { db, firestoreModule } = runtime;
+  if (!db) return;
+
+  const userRef = firestoreModule.doc(db, 'users', user.uid);
+  const now = firestoreModule.serverTimestamp();
+  await firestoreModule.setDoc(userRef, {
+    displayName: displayName || user.displayName || 'User',
+    email: user.email || null,
+    phoneNumber: user.phoneNumber || null,
+    photoURL: user.photoURL || null,
+    providerIds: user.providerData.map((provider) => provider.providerId),
+    updatedAt: now,
+    createdAt: now
+  }, { merge: true });
+};
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
@@ -39,22 +87,48 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!auth) {
+    if (!hasFirebaseConfig) {
       setLoading(false);
       return;
     }
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      setLoading(false);
+
+    let unsubscribe: (() => void) | undefined;
+    let isMounted = true;
+
+    loadFirebaseRuntime().then((runtime) => {
+      if (!isMounted) return;
+      const { auth, authModule } = runtime;
+      if (!auth) {
+        setLoading(false);
+        return;
+      }
+      unsubscribe = authModule.onAuthStateChanged(auth, (user) => {
+        setCurrentUser(user);
+        setLoading(false);
+        if (user) {
+          syncUserProfile(runtime, user).catch((error) => {
+            console.error("Failed to sync user profile", error);
+          });
+        }
+      });
+    }).catch(() => {
+      if (isMounted) setLoading(false);
     });
-    return unsubscribe;
+
+    return () => {
+      isMounted = false;
+      unsubscribe?.();
+    };
   }, []);
 
   const signInWithGoogle = async () => {
+    const runtime = await loadFirebaseRuntime();
+    const { auth, authModule } = runtime;
     if (!auth) throw new Error("Firebase not initialized");
-    const provider = new GoogleAuthProvider();
+    const provider = new authModule.GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, provider);
+      const result = await authModule.signInWithPopup(auth, provider);
+      await syncUserProfile(runtime, result.user);
     } catch (error) {
       console.error("Google Sign In Error", error);
       throw error;
@@ -62,41 +136,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const registerWithEmail = async (email: string, pass: string, name: string) => {
+    const runtime = await loadFirebaseRuntime();
+    const { auth, authModule } = runtime;
     if (!auth) throw new Error("Firebase not initialized");
-    const result = await createUserWithEmailAndPassword(auth, email, pass);
-    await updateProfile(result.user, { displayName: name });
+    const result = await authModule.createUserWithEmailAndPassword(auth, email, pass);
+    await authModule.updateProfile(result.user, { displayName: name });
+    await syncUserProfile(runtime, result.user, name);
   };
 
   const loginWithEmail = async (email: string, pass: string) => {
+    const runtime = await loadFirebaseRuntime();
+    const { auth, authModule } = runtime;
     if (!auth) throw new Error("Firebase not initialized");
-    await signInWithEmailAndPassword(auth, email, pass);
+    const result = await authModule.signInWithEmailAndPassword(auth, email, pass);
+    await syncUserProfile(runtime, result.user);
   };
 
   const logout = async () => {
-    if (auth) {
-      await signOut(auth);
+    if (hasFirebaseConfig) {
+      const { auth, authModule } = await loadFirebaseRuntime();
+      if (auth) {
+        await authModule.signOut(auth);
+      }
     }
     setCurrentUser(null);
   };
 
   const updateUserProfile = async (name: string, photoURL?: string) => {
-    if (auth && auth.currentUser) {
-      await updateProfile(auth.currentUser, { displayName: name, photoURL: photoURL || auth.currentUser.photoURL });
-      setCurrentUser({ ...auth.currentUser });
-    } else if (currentUser) {
+    if (hasFirebaseConfig) {
+      const runtime = await loadFirebaseRuntime();
+      const { auth, authModule } = runtime;
+      if (auth && auth.currentUser) {
+        await authModule.updateProfile(auth.currentUser, { displayName: name, photoURL: photoURL || auth.currentUser.photoURL });
+        await syncUserProfile(runtime, auth.currentUser, name);
+        setCurrentUser({ ...auth.currentUser });
+        return;
+      }
+    }
+
+    if (currentUser) {
       // Handle demo user update
       setCurrentUser({ ...currentUser, displayName: name, photoURL: photoURL || currentUser.photoURL } as User);
     }
   };
 
   const uploadAvatar = async (file: File): Promise<string> => {
-    if (!storage || !auth?.currentUser) {
-        // If demo user or no storage, return a fake URL or object URL
-        return URL.createObjectURL(file);
+    if (!hasFirebaseConfig) {
+      return URL.createObjectURL(file);
     }
-    const storageRef = ref(storage, `avatars/${auth.currentUser.uid}/${file.name}`);
-    await uploadBytes(storageRef, file);
-    return await getDownloadURL(storageRef);
+    const { auth, storage, storageModule } = await loadFirebaseRuntime();
+    if (!storage || !auth?.currentUser) {
+      // If demo user or no storage, return a fake URL or object URL
+      return URL.createObjectURL(file);
+    }
+    const storageRef = storageModule.ref(storage, `avatars/${auth.currentUser.uid}/${file.name}`);
+    await storageModule.uploadBytes(storageRef, file);
+    return await storageModule.getDownloadURL(storageRef);
   };
 
   const loginAsDemoUser = async () => {

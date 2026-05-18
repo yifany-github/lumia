@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "backend:build": "npm --prefix functions run build",
+    "backend:deploy": "npm run build && npm run backend:build && npx firebase-tools deploy --only firestore,functions,hosting --project lumia-cd3d2",
+    "backend:list": "npx firebase-tools functions:list --project lumia-cd3d2"
   },
   "dependencies": {
     "@google/genai": "^1.38.0",

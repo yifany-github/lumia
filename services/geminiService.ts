@@ -1,8 +1,71 @@
 
-import { GoogleGenAI, GenerateContentResponse, Type, Schema } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { Distortion } from "../types";
+import { auth } from "../firebase";
 
-// Lazy initialization of the client
+const firebaseProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || "lumia-cd3d2";
+const aiGatewayURL = `https://us-central1-${firebaseProjectId}.cloudfunctions.net/aiGateway`;
+const textModel = import.meta.env.VITE_GEMINI_TEXT_MODEL || "gemini-3.1-pro-preview";
+const ttsModel = import.meta.env.VITE_GEMINI_TTS_MODEL || "gemini-3.1-flash-tts-preview";
+
+const getFirebaseToken = async (): Promise<string> => {
+  const user = auth?.currentUser;
+  if (!user) {
+    throw new Error("SIGN_IN_REQUIRED");
+  }
+  return user.getIdToken();
+};
+
+const callAiGateway = async <T,>(feature: string, payload: Record<string, unknown>): Promise<T> => {
+  const token = await getFirebaseToken();
+  const response = await fetch(aiGatewayURL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify({ feature, payload })
+  });
+
+  const raw = await response.text();
+  let json: any = {};
+  try {
+    json = raw ? JSON.parse(raw) : {};
+  } catch {
+    json = {};
+  }
+
+  if (!response.ok) {
+    if (raw.trim().toLowerCase().startsWith("<html")) {
+      if (response.status === 404) {
+        throw new Error("Lumina AI is not deployed yet. Deploy the Firebase aiGateway function, then try again.");
+      }
+      if (response.status === 401 || response.status === 403) {
+        throw new Error("Lumina AI is deployed but not callable yet. Redeploy aiGateway with public invoker access.");
+      }
+    }
+    const message = json?.error?.message || json?.error || raw || `Lumina AI request failed (${response.status})`;
+    throw new Error(message);
+  }
+
+  return json as T;
+};
+
+const friendlyAiError = (error: any): string => {
+  if (error?.message === "SIGN_IN_REQUIRED") {
+    return "ERROR_API_KEY_MISSING";
+  }
+  if (error?.name === 'TypeError' && error?.message?.includes('fetch')) {
+    return "I'm having trouble connecting to Lumina AI. Please check your internet connection and try again.";
+  }
+  if (error?.name === 'AbortError' || error?.message?.includes('timeout')) {
+    return "The request took too long to complete. Please try again.";
+  }
+  return "I apologize, I'm feeling a bit disconnected right now. Please try again in a moment.";
+};
+
+// Temporary direct client for image/audio experiments that are not yet routed
+// through the production AI gateway.
 const getAiClient = async (): Promise<GoogleGenAI> => {
   // We do not await window.aistudio.hasSelectedApiKey() here because it can hang the process
   // if the iframe communication is delayed. Instead, we directly use the injected environment variables.
@@ -19,31 +82,21 @@ const getAiClient = async (): Promise<GoogleGenAI> => {
 
 export const generateTherapistResponse = async (prompt: string, systemInstruction: string): Promise<string> => {
   try {
-    const ai = await getAiClient();
-    const response: GenerateContentResponse = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-      config: {
-        systemInstruction: systemInstruction,
-        temperature: 0.6,
-      },
+    const therapistMatch = systemInstruction.match(/You are\s+([^,.]+)/i);
+    const therapistName = therapistMatch?.[1]?.trim() || "Lumina";
+    const response = await callAiGateway<{ text?: string }>("therapyChat", {
+      therapistID: therapistName.toLowerCase().replace(/^dr\.\s*/, "").split(/\s+/)[0] || "willow",
+      therapistName,
+      history: [],
+      newMessage: prompt,
+      conversationState: "listen",
+      riskLevel: 0,
+      contextBrief: ""
     });
     return response.text || "I'm having trouble finding the right words. Could you say that again?";
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    if (error.message?.includes('API key') || error.status === 403) {
-        return "ERROR_API_KEY_MISSING";
-    }
-    if (error.name === 'TypeError' && error.message?.includes('fetch')) {
-        return "I'm having trouble connecting to the network. Please check your internet connection and try again.";
-    }
-    if (error.name === 'AbortError' || error.message?.includes('timeout')) {
-        return "The request took too long to complete. Please try again.";
-    }
-    if (error.status === 503 || error.status === 500) {
-        return "The service is currently unavailable. Please try again later.";
-    }
-    return "I apologize, I'm feeling a bit disconnected right now. Please try again in a moment.";
+    console.error("Lumina AI gateway error:", error);
+    return friendlyAiError(error);
   }
 };
 
@@ -54,35 +107,15 @@ export const analyzeChatSentiment = async (history: string): Promise<{
   energy: number;
 } | null> => {
   try {
-    const ai = await getAiClient();
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Analyze the following chat history and provide scores (0-100) for the user's emotional state:\n\n${history}`,
-      config: {
-        systemInstruction: "You are an expert psychological evaluator. Analyze the user's emotional state based on their conversation. Return precise numerical scores.",
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            wellness: { type: Type.INTEGER, description: "Overall emotional wellbeing 0-100" },
-            clarity: { type: Type.INTEGER, description: "Mental clarity and focus 0-100" },
-            calm: { type: Type.INTEGER, description: "Calmness vs agitation 0-100" },
-            energy: { type: Type.INTEGER, description: "Vitality and motivation 0-100" }
-          },
-          required: ["wellness", "clarity", "calm", "energy"]
-        }
-      }
+    const response = await callAiGateway<{ metrics?: { wellness: number; clarity: number; calm: number; energy: number } }>("analyzeSentiment", {
+      history: history.split('\n').filter(Boolean).map((line) => ({
+        role: line.toLowerCase().startsWith('user') ? 'user' : 'model',
+        text: line.replace(/^[^:]+:\s*/, '')
+      }))
     });
-    const text = response.text;
-    return text ? JSON.parse(text) : null;
+    return response.metrics ?? null;
   } catch (error: any) {
-    console.error("Sentiment analysis error", error);
-    if (error.name === 'TypeError' && error.message?.includes('fetch')) {
-        throw new Error("Network error: Unable to connect for sentiment analysis.");
-    }
-    if (error.name === 'AbortError' || error.message?.includes('timeout')) {
-        throw new Error("Timeout: Sentiment analysis took too long.");
-    }
+    console.error("Sentiment analysis gateway error", error);
     return null;
   }
 };
@@ -99,95 +132,33 @@ export const analyzeJournalEntry = async (content: string): Promise<{
   anxietyLevel: number;
 } | null> => {
   try {
-    const ai = await getAiClient();
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Analyze this journal entry: "${content}"`,
-      config: {
-        systemInstruction: `You are an expert psychological analyst and journaling companion. Provide deep insights and quantitative metrics.`,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            mood: { type: Type.STRING, enum: ["happy", "calm", "anxious", "sad", "neutral", "energetic"] },
-            tags: { type: Type.ARRAY, items: { type: Type.STRING } },
-            summary: { type: Type.STRING },
-            reflection: { type: Type.STRING },
-            actionItem: { type: Type.STRING },
-            sentimentScore: { type: Type.INTEGER },
-            energyLevel: { type: Type.INTEGER },
-            anxietyLevel: { type: Type.INTEGER }
-          },
-          required: ["title", "mood", "tags", "summary", "reflection", "actionItem", "sentimentScore", "energyLevel", "anxietyLevel"]
-        }
-      }
+    const response = await callAiGateway<{ analysis?: {
+      title: string;
+      mood: string;
+      tags: string[];
+      summary: string;
+      reflection: string;
+      actionItem: string;
+      sentimentScore: number;
+      energyLevel: number;
+      anxietyLevel: number;
+    } }>("analyzeJournal", {
+      content
     });
-    const jsonText = response.text;
-    return jsonText ? JSON.parse(jsonText) : null;
+    return response.analysis ?? null;
   } catch (error: any) {
-    console.error("Analysis Error:", error);
-    if (error.name === 'TypeError' && error.message?.includes('fetch')) {
-        throw new Error("Network error: Please check your internet connection.");
-    }
-    if (error.name === 'AbortError' || error.message?.includes('timeout')) {
-        throw new Error("Timeout: The analysis took too long. Please try again.");
-    }
-    if (error.status === 503 || error.status === 500) {
-        throw new Error("Service unavailable: The AI service is currently down.");
-    }
-    throw new Error("An unexpected error occurred during analysis.");
+    console.error("Journal analysis gateway error:", error);
+    throw new Error(error?.message === "SIGN_IN_REQUIRED" ? "Please sign in to use Lumina AI." : "Lumina AI could not analyze this entry right now.");
   }
 };
 
 export const analyzeDistortions = async (content: string): Promise<Distortion[]> => {
   try {
-    const ai = await getAiClient();
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Analyze for cognitive distortions: "${content}"`,
-      config: {
-        systemInstruction: `Identify cognitive distortions and provide 3 perspectives: Rational, Compassionate, Stoic.`,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              originalText: { type: Type.STRING },
-              type: { type: Type.STRING },
-              explanation: { type: Type.STRING },
-              reframes: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    perspective: { type: Type.STRING, enum: ["rational", "compassionate", "stoic"] },
-                    text: { type: Type.STRING }
-                  },
-                  required: ["perspective", "text"]
-                }
-              }
-            },
-            required: ["originalText", "type", "explanation", "reframes"]
-          }
-        }
-      }
-    });
-    const jsonText = response.text;
-    return jsonText ? JSON.parse(jsonText) : [];
+    const response = await callAiGateway<{ distortions?: Distortion[] }>("analyzeDistortions", { content });
+    return response.distortions ?? [];
   } catch (error: any) {
-    console.error("Distortion Analysis Error:", error);
-    if (error.name === 'TypeError' && error.message?.includes('fetch')) {
-        throw new Error("Network error: Please check your internet connection.");
-    }
-    if (error.name === 'AbortError' || error.message?.includes('timeout')) {
-        throw new Error("Timeout: The analysis took too long. Please try again.");
-    }
-    if (error.status === 503 || error.status === 500) {
-        throw new Error("Service unavailable: The AI service is currently down.");
-    }
-    throw new Error("An unexpected error occurred during distortion analysis.");
+    console.error("Distortion analysis gateway error:", error);
+    throw new Error(error?.message === "SIGN_IN_REQUIRED" ? "Please sign in to use Lumina AI." : "Lumina AI could not reframe this right now.");
   }
 };
 
@@ -201,48 +172,29 @@ export const generateDeepInsights = async (entries: { date: string, content: str
   };
 } | null> => {
   try {
-    const ai = await getAiClient();
-    const historyText = entries.map(e => `[${e.date}] Mood: ${e.mood} | Content: ${e.content}`).join('\n');
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Analyze the following journal entries and provide deep insights:\n\n${historyText}`,
-      config: {
-        systemInstruction: "You are an expert psychological data analyst. Identify hidden emotional triggers and generate a 'Mental Health Wrapped' summary based on the user's journal entries.",
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            triggerIdentification: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  trigger: { type: Type.STRING, description: "The identified trigger (e.g., 'Meetings', 'Mondays')" },
-                  effect: { type: Type.STRING, description: "The effect on the user (e.g., 'Anxiety increases by 30%')" },
-                  suggestion: { type: Type.STRING, description: "A gentle suggestion to handle this trigger" }
-                },
-                required: ["trigger", "effect", "suggestion"]
-              }
-            },
-            mentalHealthWrapped: {
-              type: Type.OBJECT,
-              properties: {
-                lowPointsOvercome: { type: Type.INTEGER, description: "Number of difficult moments the user successfully navigated" },
-                topPositiveWords: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Most frequently used positive words" },
-                summary: { type: Type.STRING, description: "A warm, encouraging summary of their emotional journey" },
-                growthArea: { type: Type.STRING, description: "The area where the user has shown the most growth" }
-              },
-              required: ["lowPointsOvercome", "topPositiveWords", "summary", "growthArea"]
-            }
-          },
-          required: ["triggerIdentification", "mentalHealthWrapped"]
-        }
-      }
+    const response = await callAiGateway<{ insights?: {
+      triggers?: { trigger: string, effect: string, suggestion: string }[];
+      wrapped?: {
+        lowPointsOvercome: number;
+        topPositiveWords: string[];
+        summary: string;
+        growthArea: string;
+      };
+    } }>("generateDeepInsights", {
+      entries
     });
-    const text = response.text;
-    return text ? JSON.parse(text) : null;
+    if (!response.insights) return null;
+    return {
+      triggerIdentification: response.insights.triggers ?? [],
+      mentalHealthWrapped: response.insights.wrapped ?? {
+        lowPointsOvercome: 0,
+        topPositiveWords: [],
+        summary: "",
+        growthArea: ""
+      }
+    };
   } catch (error: any) {
-    console.error("Deep Insights Error:", error);
+    console.error("Deep insights gateway error:", error);
     return null;
   }
 };
@@ -337,7 +289,7 @@ export const generateMeditationAudio = async (context: string): Promise<{ audioB
     
     // First, generate the script
     const scriptResponse = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: textModel,
       contents: `Based on the user's recent thoughts: "${context}", write a very short (3-4 sentences), personalized guided meditation script to help them find peace and center themselves. Keep it soothing and direct.`,
       config: {
         temperature: 0.7,
@@ -348,7 +300,7 @@ export const generateMeditationAudio = async (context: string): Promise<{ audioB
 
     // Then, generate the audio
     const audioResponse = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
+      model: ttsModel,
       contents: [{ parts: [{ text: script }] }],
       config: {
         responseModalities: ['AUDIO'],
@@ -373,15 +325,9 @@ export const generateMeditationAudio = async (context: string): Promise<{ audioB
 };
 
 export const checkApiKeyAvailability = async (): Promise<boolean> => {
-  if (typeof window !== 'undefined' && (window as any).aistudio) {
-    return await (window as any).aistudio.hasSelectedApiKey();
-  }
-  const key = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
-  return !!key;
+  return Boolean(auth?.currentUser);
 };
 
 export const openApiKeySelector = async (): Promise<void> => {
-  if (typeof window !== 'undefined' && (window as any).aistudio) {
-    await (window as any).aistudio.openSelectKey();
-  }
+  window.dispatchEvent(new CustomEvent("lumina:show-auth"));
 };

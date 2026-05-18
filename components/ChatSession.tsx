@@ -1,10 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, User, RefreshCcw, Lock, Key, Sparkles } from 'lucide-react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
+import { Send, Loader2, User, RefreshCcw, Lock, Key, Sparkles, Mic, MicOff } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { generateTherapistResponse, checkApiKeyAvailability, openApiKeySelector } from '../services/geminiService';
 import { ChatMessage, Therapist } from '../types';
 import Button from './Button';
 import { ButtonVariant } from '../types';
+import { useSpeechInput } from '../hooks/useSpeechInput';
 
 interface ChatSessionProps {
   therapist: Therapist | null;
@@ -33,6 +34,10 @@ const ChatSession: React.FC<ChatSessionProps> = ({ therapist, initialPrompt, isL
   const inputRef = useRef<HTMLInputElement>(null);
   
   const hasHandledInitialPrompt = useRef(false);
+  const appendVoiceTranscript = useCallback((text: string) => {
+    setInput(prev => `${prev}${prev.trim() ? ' ' : ''}${text}`.trimStart());
+  }, []);
+  const voiceInput = useSpeechInput({ onTranscript: appendVoiceTranscript });
 
   // Initialize chat when therapist changes
   useEffect(() => {
@@ -95,6 +100,7 @@ const ChatSession: React.FC<ChatSessionProps> = ({ therapist, initialPrompt, isL
 
   const handleSend = async () => {
     if (!input.trim() || !therapist) return;
+    if (voiceInput.isListening) voiceInput.stop();
     
     // Safety check just in case
     if (isLocked) {
@@ -102,10 +108,11 @@ const ChatSession: React.FC<ChatSessionProps> = ({ therapist, initialPrompt, isL
         return;
     }
 
+    const messageText = input.trim();
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
-      text: input
+      text: messageText
     };
 
     setMessages(prev => [...prev, userMsg]);
@@ -114,7 +121,7 @@ const ChatSession: React.FC<ChatSessionProps> = ({ therapist, initialPrompt, isL
 
     try {
       const historyContext = messages.slice(-5).map(m => `${m.role}: ${m.text}`).join('\n');
-      const prompt = `${historyContext}\nuser: ${userMsg.text}`;
+      const prompt = `${historyContext}\nuser: ${messageText}`;
 
       const responseText = await generateTherapistResponse(prompt, therapist.systemInstruction);
       
@@ -123,7 +130,7 @@ const ChatSession: React.FC<ChatSessionProps> = ({ therapist, initialPrompt, isL
           setMessages(prev => [...prev, {
               id: Date.now().toString(),
               role: 'model',
-              text: "I cannot connect to my consciousness. Please ensure your API Key is connected below."
+              text: "Please sign in so I can connect securely to Lumina AI."
           }]);
       } else {
           const modelMsg: ChatMessage = {
@@ -306,7 +313,7 @@ const ChatSession: React.FC<ChatSessionProps> = ({ therapist, initialPrompt, isL
                 </div>
             )}
 
-            {/* API Key Missing Alert */}
+            {/* AI connection alert */}
             {apiKeyMissing && (
                 <div className="flex flex-col items-center justify-center p-6 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 rounded-2xl animate-in fade-in">
                     <div className="w-12 h-12 bg-red-100 dark:bg-red-900/40 text-red-500 rounded-full flex items-center justify-center mb-3">
@@ -314,10 +321,10 @@ const ChatSession: React.FC<ChatSessionProps> = ({ therapist, initialPrompt, isL
                     </div>
                     <h4 className="font-bold text-red-900 dark:text-red-100 mb-2">Connection Required</h4>
                     <p className="text-sm text-red-700 dark:text-red-200 text-center mb-4">
-                        To continue your journey with {therapist.name}, please verify your Google AI connection.
+                        Sign in so Lumina can connect securely to the AI backend.
                     </p>
                     <Button onClick={handleConnectKey} className="h-10 text-sm">
-                        Connect API Key
+                        Sign In
                     </Button>
                 </div>
             )}
@@ -340,9 +347,22 @@ const ChatSession: React.FC<ChatSessionProps> = ({ therapist, initialPrompt, isL
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                     disabled={apiKeyMissing || isLoading}
-                    placeholder={apiKeyMissing ? "Please connect API key above..." : "Share what's on your mind..."}
-                    className="w-full h-14 pl-6 pr-14 rounded-full border border-border bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-foreground placeholder:text-muted-foreground/70 disabled:opacity-60 disabled:cursor-not-allowed"
+                    placeholder={apiKeyMissing ? "Sign in to continue..." : "Share what's on your mind..."}
+                    className="w-full h-14 pl-6 pr-24 rounded-full border border-border bg-muted/30 focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all text-foreground placeholder:text-muted-foreground/70 disabled:opacity-60 disabled:cursor-not-allowed"
                   />
+                  <button
+                    onClick={voiceInput.toggle}
+                    disabled={!voiceInput.isSupported || apiKeyMissing || isLoading}
+                    className={`
+                      absolute right-14 w-10 h-10 rounded-full flex items-center justify-center transition-all
+                      ${voiceInput.isListening ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-muted-foreground hover:text-primary hover:bg-muted'}
+                      disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground
+                    `}
+                    title={voiceInput.isSupported ? (voiceInput.isListening ? 'Stop voice input' : 'Start voice input') : 'Voice input is not supported in this browser'}
+                    aria-label={voiceInput.isListening ? 'Stop voice input' : 'Start voice input'}
+                  >
+                    {voiceInput.isListening ? <MicOff size={18} /> : <Mic size={18} />}
+                  </button>
                   <button 
                     onClick={handleSend}
                     disabled={isLoading || !input.trim() || apiKeyMissing}
@@ -357,6 +377,12 @@ const ChatSession: React.FC<ChatSessionProps> = ({ therapist, initialPrompt, isL
                 </>
               )}
             </div>
+            {(voiceInput.isListening || voiceInput.interimTranscript || voiceInput.error) && !isLocked && (
+              <div className="mt-2 px-5 text-xs font-bold text-muted-foreground flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${voiceInput.error ? 'bg-red-400' : 'bg-primary animate-pulse'}`} />
+                <span>{voiceInput.error || voiceInput.interimTranscript || 'Listening...'}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
