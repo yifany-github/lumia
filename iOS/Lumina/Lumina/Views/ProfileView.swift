@@ -1,6 +1,8 @@
 import SwiftUI
 import LocalAuthentication
 import AuthenticationServices
+import CryptoKit
+import Security
 
 private enum ProfileAuthMode: String, CaseIterable, Identifiable {
     case signIn
@@ -30,6 +32,38 @@ private enum ProfileCredentialMethod: String, CaseIterable, Identifiable {
     }
 }
 
+private enum AppleSignInNonce {
+    private static let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+
+    static func random(length: Int = 32) throws -> String {
+        precondition(length > 0)
+        var result = ""
+        result.reserveCapacity(length)
+
+        while result.count < length {
+            var randomByte: UInt8 = 0
+            let status = SecRandomCopyBytes(kSecRandomDefault, 1, &randomByte)
+            guard status == errSecSuccess else {
+                throw NSError(
+                    domain: "LuminaAppleSignIn",
+                    code: Int(status),
+                    userInfo: [NSLocalizedDescriptionKey: "Apple sign-in could not start securely. Try again."]
+                )
+            }
+            if randomByte < charset.count {
+                result.append(charset[Int(randomByte)])
+            }
+        }
+
+        return result
+    }
+
+    static func sha256(_ input: String) -> String {
+        let digest = SHA256.hash(data: Data(input.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+}
+
 // MARK: - Activity Share Sheet (UIKit bridge)
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
@@ -37,6 +71,44 @@ struct ShareSheet: UIViewControllerRepresentable {
         UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
     func updateUIViewController(_ uvc: UIActivityViewController, context: Context) {}
+}
+
+struct ProfileAvatarImage: View {
+    let avatarID: ProfileAvatarID
+    let fallbackText: String
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.30, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.organicCard, Color.organicPrimary.opacity(0.12)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+
+            Image(avatarID.assetName)
+                .renderingMode(.original)
+                .resizable()
+                .scaledToFit()
+                .padding(size * 0.12)
+
+            if fallbackText.isEmpty == false && avatarID.assetName.isEmpty {
+                Text(fallbackText)
+                    .luminaFont(size: size * 0.34, weight: .bold, design: .rounded)
+                    .foregroundColor(.organicPrimary)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.30, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: size * 0.30, style: .continuous)
+                .strokeBorder(Color.organicBorder.opacity(0.72), lineWidth: 1)
+        }
+        .accessibilityHidden(true)
+    }
 }
 
 // MARK: - Profile View
@@ -50,14 +122,13 @@ struct ProfileView: View {
 
     @State private var showNameEdit     = false
     @State private var showBioEdit      = false
-    @State private var showAPIKey       = false
+    @State private var showIdentityEdit = false
+    @State private var showAIConnection = false
     @State private var showGoalSheet    = false
     @State private var showShareSheet   = false
     @State private var showClearConfirm = false
     @State private var showClearChatConfirm = false
     @State private var showClearJournalConfirm = false
-    @State private var showHealthPermission = false
-    @State private var showHealthDeleteConfirm = false
     @State private var showBiometricUnavailable = false
     @State private var showAccountSheet = false
     @State private var showSignOutConfirm = false
@@ -65,8 +136,11 @@ struct ProfileView: View {
     @State private var biometricUnavailableMessage = "Device authentication is not available."
     @State private var editedName  = ""
     @State private var editedBio   = ""
-    @State private var apiKeyErrorMessage: String?
-    @State private var isTestingAPIKey = false
+    @State private var editedAvatarID: ProfileAvatarID = .cat
+    @State private var editedGender: ProfileGender = .notSpecified
+    @State private var aiConnectionErrorMessage: String?
+    @State private var aiConnectionStatusMessage: String?
+    @State private var isTestingAIConnection = false
     @State private var authMode: ProfileAuthMode = .signIn
     @State private var authMethod: ProfileCredentialMethod = .email
     @State private var authName = ""
@@ -76,7 +150,9 @@ struct ProfileView: View {
     @State private var authConfirmPassword = ""
     @State private var authErrorMessage: String?
     @State private var isAuthSubmitting = false
+    @State private var currentAppleNonce: String?
     @State private var selectedMembershipPlan = "yearly"
+    @State private var membershipActionError: String?
     @State private var appeared    = false
 
     var totalSessions: Int   { appState.chatSessions.count }
@@ -96,8 +172,6 @@ struct ProfileView: View {
         appState.userName.split(separator: " ").compactMap { $0.first }
             .map { String($0) }.prefix(2).joined().uppercased()
     }
-
-    var apiKeySet: Bool { true }
 
     var joinedString: String {
         let stored = UserDefaults.standard.double(forKey: "lumina_join_date")
@@ -159,6 +233,8 @@ struct ProfileView: View {
         Exported: \(exportedAt)
         User: \(appState.userName)
         Bio: \(appState.userBio.isEmpty ? "None" : appState.userBio)
+        Avatar: \(appState.profileAvatarID.rawValue)
+        Gender: \(appState.profileGender.rawValue)
 
         Counts
         Journals: \(appState.entries.count)
@@ -166,8 +242,6 @@ struct ProfileView: View {
         Therapy messages: \(totalMessages)
         Habits: \(appState.habits.count)
         Check-ins: \(appState.checkIns.count)
-        Health summaries: \(appState.healthSummaries.count)
-
         Journals
         \(entries.isEmpty ? "No journal entries." : entries)
 
@@ -220,24 +294,12 @@ struct ProfileView: View {
         .preferredColorScheme(LuminaAppearanceMode.normalized(appearanceModeRawValue).colorScheme)
         .sheet(isPresented: $showNameEdit)  { nameSheet }
         .sheet(isPresented: $showBioEdit)   { bioSheet }
-        .sheet(isPresented: $showAPIKey)    { apiKeySheet }
+        .sheet(isPresented: $showIdentityEdit) { identitySheet }
+        .sheet(isPresented: $showAIConnection) { aiConnectionSheet }
         .sheet(isPresented: $showGoalSheet) { goalsSheet }
         .sheet(isPresented: $showAccountSheet) { accountSheet }
         .sheet(isPresented: $showMembershipSheet) { membershipSheet }
         .sheet(isPresented: $showShareSheet) { ShareSheet(items: [exportText]) }
-        .sheet(isPresented: $showHealthPermission) {
-            HealthPermissionSheet(
-                isSyncing: appState.isHealthSyncing,
-                onConnect: {
-                    Task {
-                        appState.acknowledgeHealthDataUse()
-                        await appState.requestHealthAuthorizationAndSync()
-                        showHealthPermission = false
-                    }
-                },
-                onCancel: { showHealthPermission = false }
-            )
-        }
         .alert("Reset All Data?", isPresented: $showClearConfirm) {
             Button("Delete Everything", role: .destructive) {
                 appState.clearAllChatSessions()
@@ -246,7 +308,7 @@ struct ProfileView: View {
                 hasCompletedWelcomeGuide = false
             }
             Button("Cancel", role: .cancel) {}
-        } message: { Text("This permanently removes journal entries, chat history, local health summaries, and shows the guide again next launch.") }
+        } message: { Text("This permanently removes journal entries, chat history, local preferences, and shows the guide again next launch.") }
         .alert("Clear Chat History?", isPresented: $showClearChatConfirm) {
             Button("Clear Chats", role: .destructive) {
                 appState.clearAllChatSessions()
@@ -260,12 +322,6 @@ struct ProfileView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: { Text("This removes all saved reflections. Therapy sessions and garden progress stay untouched.") }
-        .alert("Delete Local Health Context?", isPresented: $showHealthDeleteConfirm) {
-            Button("Delete Health Context", role: .destructive) {
-                appState.deleteLocalHealthData()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: { Text("This removes only Lumia's stored daily health summaries. It does not change your Apple Health data or Health permissions.") }
         .alert("Face ID / Touch ID Unavailable", isPresented: $showBiometricUnavailable) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -296,17 +352,24 @@ struct ProfileView: View {
                 .padding(.trailing, 20).padding(.bottom, 10)
             }
 
-            ZStack {
-                Circle()
-                    .fill(LinearGradient(
-                        colors: [Color.organicPrimary, Color.organicPrimary.opacity(0.65)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 90, height: 90)
-                    .shadow(color: Color.organicPrimary.opacity(0.35), radius: 16, x: 0, y: 8)
-                Text(initials.isEmpty ? "?" : initials)
-                    .luminaFont(size: 34, weight: .bold, design: .rounded)
-                    .foregroundColor(.white)
+            Button {
+                prepareIdentitySheet()
+                showIdentityEdit = true
+            } label: {
+                ZStack(alignment: .bottomTrailing) {
+                    ProfileAvatarImage(avatarID: appState.profileAvatarID, fallbackText: initials, size: 96)
+                        .shadow(color: Color.organicPrimary.opacity(colorScheme == .dark ? 0.16 : 0.22), radius: 18, x: 0, y: 9)
+
+                    Image(systemName: "pencil")
+                        .luminaFont(size: 11, weight: .black)
+                        .foregroundColor(.organicPrimary)
+                        .frame(width: 28, height: 28)
+                        .background(Color.organicCard, in: Circle())
+                        .overlay(Circle().strokeBorder(Color.organicBorder.opacity(0.72), lineWidth: 1))
+                }
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Change profile avatar")
             .offset(y: -12).padding(.bottom, -12)
 
             VStack(spacing: 6) {
@@ -327,6 +390,15 @@ struct ProfileView: View {
 
                 Label(joinedString, systemImage: "calendar")
                     .luminaFont(size: 11).foregroundColor(.organicMutedFg).padding(.top, 2)
+
+                if appState.profileGender != .notSpecified {
+                    Text(appState.profileGender.profileDetail)
+                        .luminaFont(size: 10, weight: .bold)
+                        .foregroundColor(.organicMutedFg)
+                        .padding(.horizontal, 10)
+                        .frame(height: 24)
+                        .background(Color.organicMuted.opacity(0.62), in: Capsule())
+                }
 
                 HStack(spacing: 10) {
                     HStack(spacing: 5) {
@@ -465,27 +537,6 @@ struct ProfileView: View {
         .padding(.horizontal, 16).padding(.bottom, 20)
     }
 
-    // ── Health Context ───────────────────────────────────────────────
-    var healthContextSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionHeader("Health Context", icon: "heart.text.square.fill")
-            HealthContextPanel(
-                permissionState: appState.healthPermissionState,
-                baseline: appState.healthBaseline,
-                summariesCount: appState.healthSummaries.count,
-                lastSyncAt: appState.healthLastSyncAt,
-                isSyncing: appState.isHealthSyncing,
-                error: appState.healthSyncError,
-                onConnect: { showHealthPermission = true },
-                onSync: {
-                    Task { await appState.syncHealthSummaries() }
-                },
-                onDelete: { showHealthDeleteConfirm = true }
-            )
-        }
-        .padding(.horizontal, 16).padding(.bottom, 20)
-    }
-
     // ── Evaluation ───────────────────────────────────────────────────
     var evaluationSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -509,7 +560,6 @@ struct ProfileView: View {
         ProfileSettingsSectionView(
             appState: appState,
             appearanceModeRawValue: $appearanceModeRawValue,
-            apiKeySet: apiKeySet,
             totalSessions: totalSessions,
             onAccount: {
                 prepareAccountSheet()
@@ -524,9 +574,14 @@ struct ProfileView: View {
                 editedBio = appState.userBio
                 showBioEdit = true
             },
-            onAPIKey: {
-                apiKeyErrorMessage = nil
-                showAPIKey = true
+            onEditIdentity: {
+                prepareIdentitySheet()
+                showIdentityEdit = true
+            },
+            onAIConnection: {
+                aiConnectionErrorMessage = nil
+                aiConnectionStatusMessage = nil
+                showAIConnection = true
             },
             onQuickGuide: {
                 dismissProfile()
@@ -725,6 +780,11 @@ struct ProfileView: View {
         authErrorMessage = nil
     }
 
+    func prepareIdentitySheet() {
+        editedAvatarID = appState.profileAvatarID
+        editedGender = appState.profileGender
+    }
+
     func enableBiometricLockIfAvailable() {
         let context = LAContext()
         var error: NSError?
@@ -832,13 +892,13 @@ struct ProfileView: View {
         @ObservedObject var appState: AppState
         @Binding var appearanceModeRawValue: String
 
-        let apiKeySet: Bool
         let totalSessions: Int
         let onAccount: () -> Void
         let onSignOut: () -> Void
         let onEditName: () -> Void
         let onEditBio: () -> Void
-        let onAPIKey: () -> Void
+        let onEditIdentity: () -> Void
+        let onAIConnection: () -> Void
         let onQuickGuide: () -> Void
         let onRefreshNotifications: () -> Void
         let onOpenSystemSettings: () -> Void
@@ -883,9 +943,11 @@ struct ProfileView: View {
 
                     divider
                     groupLabel("PROFILE")
+                    settingsRow(icon: "person.crop.square.fill", bg: Color(hex: 0x5D7052), title: "Avatar", detail: appState.profileAvatarID.title, action: onEditIdentity)
+                    settingsRow(icon: "person.text.rectangle.fill", bg: Color(hex: 0x0F766E), title: "Gender", detail: appState.profileGender.profileDetail, action: onEditIdentity)
                     settingsRow(icon: "person.fill", bg: .organicPrimary, title: "Display Name", detail: appState.userName, action: onEditName)
                     settingsRow(icon: "text.alignleft", bg: Color(hex: 0x6D28D9), title: "Bio", detail: appState.userBio.isEmpty ? "Not set" : appState.userBio, action: onEditBio)
-                    settingsRow(icon: "sparkles", bg: Color(hex: 0x9A6A22), title: "Connection", detail: "Managed for this app", action: onAPIKey)
+                    settingsRow(icon: "sparkles", bg: Color(hex: 0x9A6A22), title: "AI Connection", detail: "Service status", action: onAIConnection)
 
                     divider
                     groupLabel("HELP")
@@ -917,7 +979,7 @@ struct ProfileView: View {
                     )
                     notificationStatusRow
                     settingsRow(icon: "arrow.clockwise", bg: Color(hex: 0x5D7052), title: "Refresh Status", detail: appState.notificationPermissionLabel, action: onRefreshNotifications)
-                    settingsRow(icon: "gearshape.2.fill", bg: Color(hex: 0x6D28D9), title: "Open iOS Settings", detail: "Notifications, Health, Face ID", action: onOpenSystemSettings)
+                    settingsRow(icon: "gearshape.2.fill", bg: Color(hex: 0x6D28D9), title: "Open iOS Settings", detail: "Notifications, Face ID, app access", action: onOpenSystemSettings)
 
                     if appState.dailyReminderEnabled {
                         timePickerRow
@@ -989,6 +1051,13 @@ struct ProfileView: View {
                         title: "Let Therapy Remember Journal Themes",
                         detail: appState.useJournalContextInTherapy ? "On - recent themes may help" : "Off - chats stay separate",
                         value: $appState.useJournalContextInTherapy
+                    )
+                    infoRow(
+                        icon: "heart.text.square.fill",
+                        bg: Color(hex: 0xBE185D),
+                        title: "Health Context",
+                        detail: "Coming soon - not enabled in v1.",
+                        badge: "SOON"
                     )
                     settingsRow(
                         icon: "square.and.arrow.up.fill",
@@ -1260,6 +1329,40 @@ struct ProfileView: View {
                 .background(Color.organicCard)
                 .contentShape(Rectangle())
             }
+        }
+
+        private func infoRow(icon: String, bg: Color, title: String, detail: String, badge: String? = nil) -> some View {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(bg)
+                        .frame(width: 30, height: 30)
+                    Image(systemName: icon)
+                        .luminaFont(size: 13)
+                        .foregroundColor(.white)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .luminaFont(size: 15)
+                        .foregroundColor(.organicForeground)
+                    Text(detail)
+                        .luminaFont(size: 12)
+                        .foregroundColor(.organicMutedFg)
+                        .lineLimit(2)
+                }
+                Spacer()
+                if let badge {
+                    Text(badge)
+                        .luminaFont(size: 9, weight: .black)
+                        .foregroundColor(bg)
+                        .padding(.horizontal, 8)
+                        .frame(height: 24)
+                        .background(bg.opacity(0.12), in: Capsule())
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+            .background(Color.organicCard)
         }
 
         private func toggleRow(icon: String, bg: Color, title: String, detail: String? = nil, value: Binding<Bool>) -> some View {
@@ -1548,278 +1651,6 @@ struct ProfileView: View {
         }
     }
 
-    struct HealthContextPanel: View {
-        let permissionState: HealthPermissionState
-        let baseline: HealthBaseline?
-        let summariesCount: Int
-        let lastSyncAt: TimeInterval?
-        let isSyncing: Bool
-        let error: String?
-        let onConnect: () -> Void
-        let onSync: () -> Void
-        let onDelete: () -> Void
-
-        private var statusTitle: String {
-            switch permissionState {
-            case .unavailable: return "Unavailable"
-            case .notDetermined: return "Not connected"
-            case .requestCompleted: return "Connected"
-            case .denied: return "Permission needed"
-            }
-        }
-
-        private var statusDetail: String {
-            if let lastSyncAt {
-                let formatter = DateFormatter()
-                formatter.dateStyle = .medium
-                formatter.timeStyle = .short
-                return "Last sync \(formatter.string(from: Date(timeIntervalSince1970: lastSyncAt)))"
-            }
-            return "Daily sleep, activity, and heart-rate summaries only"
-        }
-
-        var body: some View {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "heart.text.square.fill")
-                        .luminaFont(size: 17, weight: .bold)
-                        .foregroundColor(.white)
-                        .frame(width: 42, height: 42)
-                        .background(Color(hex: 0xBE185D))
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 8) {
-                            Text(statusTitle)
-                                .luminaFont(size: 17, weight: .bold, design: .serif)
-                                .foregroundColor(.organicForeground)
-                            if isSyncing {
-                                ProgressView()
-                                    .controlSize(.mini)
-                                    .tint(.organicPrimary)
-                            }
-                        }
-                        Text(statusDetail)
-                            .luminaFont(size: 12, weight: .medium)
-                            .foregroundColor(.organicMutedFg)
-                            .lineLimit(2)
-                    }
-
-                    Spacer()
-                }
-
-                if let baseline, baseline.hasAnySignal {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("\(baseline.windowDays)-day personal range")
-                            .luminaFont(size: 11, weight: .black)
-                            .foregroundColor(.organicMutedFg)
-                        HStack(spacing: 8) {
-                            if let sleep = baseline.averageSleepMinutes {
-                                HealthMetricChip(title: "Sleep", value: "\(Int(sleep / 60))h \(Int(sleep) % 60)m", color: Color(hex: 0x4A90E2))
-                            }
-                            if let steps = baseline.averageSteps {
-                                HealthMetricChip(title: "Steps", value: "\(Int(steps.rounded()))", color: Color(hex: 0x0F766E))
-                            }
-                            if let resting = baseline.averageRestingHeartRate {
-                                HealthMetricChip(title: "Rest HR", value: "\(Int(resting.rounded()))", color: Color(hex: 0xBE185D))
-                            }
-                        }
-                    }
-                    .padding(12)
-                    .background(Color.organicMuted.opacity(0.62))
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                } else {
-                    Text("Lumia treats these signals as context, not proof of mood or diagnosis. Empty Health categories may stay blank.")
-                        .luminaFont(size: 12, weight: .medium)
-                        .foregroundColor(.organicMutedFg)
-                        .lineSpacing(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if let error {
-                    Text(error)
-                        .luminaFont(size: 12, weight: .semibold)
-                        .foregroundColor(Color(hex: 0xBE185D))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "gearshape.fill")
-                        .luminaFont(size: 10, weight: .bold)
-                        .foregroundColor(.organicMutedFg)
-                        .frame(width: 18, height: 18)
-                    Text("Revoke Health access anytime in iOS Settings > Health > Data Access & Devices > Lumia.")
-                        .luminaFont(size: 11, weight: .medium)
-                        .foregroundColor(.organicMutedFg)
-                        .lineSpacing(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                HStack(spacing: 8) {
-                    Button(action: permissionState == .requestCompleted ? onSync : onConnect) {
-                        Label(permissionState == .requestCompleted ? "Sync" : "Connect", systemImage: permissionState == .requestCompleted ? "arrow.clockwise" : "plus")
-                            .luminaFont(size: 13, weight: .bold)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 42)
-                            .background(Color.organicPrimary)
-                            .foregroundColor(.organicPrimaryFg)
-                            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isSyncing || permissionState == .unavailable)
-
-                    Button(action: onDelete) {
-                        Label("Delete", systemImage: "trash")
-                            .luminaFont(size: 13, weight: .bold)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 42)
-                            .background(Color.organicMuted)
-                            .foregroundColor(summariesCount == 0 ? .organicMutedFg.opacity(0.55) : Color(hex: 0xBE185D))
-                            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(summariesCount == 0)
-                }
-            }
-            .padding(18)
-            .background(Color.organicCard)
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .strokeBorder(Color.organicBorder.opacity(0.48), lineWidth: 1)
-            }
-        }
-    }
-
-    struct HealthMetricChip: View {
-        let title: String
-        let value: String
-        let color: Color
-
-        var body: some View {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(value)
-                    .luminaFont(size: 14, weight: .black)
-                    .foregroundColor(color)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Text(title)
-                    .luminaFont(size: 9, weight: .black)
-                    .foregroundColor(.organicMutedFg)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    struct HealthPermissionSheet: View {
-        let isSyncing: Bool
-        let onConnect: () -> Void
-        let onCancel: () -> Void
-
-        var body: some View {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    Image(systemName: "heart.text.square.fill")
-                        .luminaFont(size: 22, weight: .bold)
-                        .foregroundColor(.white)
-                        .frame(width: 54, height: 54)
-                        .background(Color(hex: 0xBE185D))
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    Spacer()
-                    Button(action: onCancel) {
-                        Image(systemName: "xmark")
-                            .luminaFont(size: 12, weight: .bold)
-                            .foregroundColor(.organicMutedFg)
-                            .frame(width: 34, height: 34)
-                            .background(Color.organicMuted)
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Use Health as gentle context")
-                        .luminaFont(size: 28, weight: .bold, design: .serif)
-                        .foregroundColor(.organicForeground)
-                    Text("Lumia can read daily summaries to make check-ins less generic. Health data is never treated as a diagnosis or proof of how you feel.")
-                        .luminaFont(size: 14, weight: .medium)
-                        .foregroundColor(.organicMutedFg)
-                        .lineSpacing(3)
-                }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    HealthPermissionBullet(icon: "bed.double.fill", title: "Daily sleep totals", detail: "Minutes asleep, summarized by day.")
-                    HealthPermissionBullet(icon: "figure.walk", title: "Daily activity totals", detail: "Steps, active energy, and exercise minutes.")
-                    HealthPermissionBullet(icon: "heart.fill", title: "Heart-rate summaries", detail: "Daily averages only, not raw samples.")
-                    HealthPermissionBullet(icon: "lock.fill", title: "Local control", detail: "You can delete Lumia's stored summaries anytime.")
-                    HealthPermissionBullet(icon: "gearshape.fill", title: "Revoke anytime", detail: "Use iOS Settings > Health > Data Access & Devices > Lumia.")
-                }
-                .padding(16)
-                .background(Color.organicMuted.opacity(0.72))
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-
-                Spacer(minLength: 0)
-
-                Button(action: onConnect) {
-                    HStack(spacing: 8) {
-                        if isSyncing {
-                            ProgressView().tint(.white)
-                        } else {
-                            Image(systemName: "plus")
-                        }
-                        Text(isSyncing ? "Connecting..." : "Allow Health Access")
-                    }
-                    .luminaFont(size: 16, weight: .bold)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 54)
-                    .background(Color.organicPrimary)
-                    .foregroundColor(.organicPrimaryFg)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .disabled(isSyncing)
-
-                Button(action: onCancel) {
-                    Text("Not Now")
-                        .luminaFont(size: 14, weight: .bold)
-                        .foregroundColor(.organicMutedFg)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 42)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(22)
-            .background(Color.organicBackground.ignoresSafeArea())
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-        }
-    }
-
-    struct HealthPermissionBullet: View {
-        let icon: String
-        let title: String
-        let detail: String
-
-        var body: some View {
-            HStack(alignment: .top, spacing: 11) {
-                Image(systemName: icon)
-                    .luminaFont(size: 13, weight: .bold)
-                    .foregroundColor(.organicPrimary)
-                    .frame(width: 26, height: 26)
-                    .background(Color.organicPrimary.opacity(0.10))
-                    .clipShape(Circle())
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .luminaFont(size: 13, weight: .bold)
-                        .foregroundColor(.organicForeground)
-                    Text(detail)
-                        .luminaFont(size: 12, weight: .medium)
-                        .foregroundColor(.organicMutedFg)
-                }
-            }
-        }
-    }
-
     // ── Account ───────────────────────────────────────────────────────
     var accountSheet: some View {
         VStack(spacing: 0) {
@@ -1980,7 +1811,14 @@ struct ProfileView: View {
     }
 
     var membershipSheet: some View {
-        ScrollView(showsIndicators: false) {
+        let plans = appState.revenueCatPlans
+        let selectedPlan = plans.first(where: { $0.id == selectedMembershipPlan })
+            ?? plans.first(where: { $0.isRecommended })
+            ?? plans.first
+        let currentProductID = appState.subscriptionState.productID
+        let selectedPlanIsCurrent = selectedPlan.map { isCurrentMembershipPlan($0, currentProductID: currentProductID) } ?? false
+
+        return ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
                 HStack {
                     Capsule()
@@ -2008,6 +1846,11 @@ struct ProfileView: View {
                     statusDetail: appState.subscriptionState.displayDetail
                 )
 
+                MembershipUsageCard(
+                    isPremium: appState.hasPremiumAccess,
+                    allowance: appState.subscriptionAllowance
+                )
+
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Included with Plus")
                         .luminaFont(size: 18, weight: .bold, design: .serif)
@@ -2022,47 +1865,79 @@ struct ProfileView: View {
                     Text("Plans")
                         .luminaFont(size: 18, weight: .bold, design: .serif)
                         .foregroundColor(.organicForeground)
-                    MembershipPlanOption(
-                        title: "Monthly",
-                        price: "App Store price",
-                        detail: "Flexible access, cancel anytime",
-                        isSelected: selectedMembershipPlan == "monthly",
-                        badge: nil
-                    ) {
-                        selectedMembershipPlan = "monthly"
-                    }
-                    MembershipPlanOption(
-                        title: "Yearly",
-                        price: "Best value",
-                        detail: "Lower monthly cost for steady use",
-                        isSelected: selectedMembershipPlan == "yearly",
-                        badge: "Recommended"
-                    ) {
-                        selectedMembershipPlan = "yearly"
+
+                    if appState.isMembershipLoading && plans.isEmpty {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                            Text("Loading App Store plans...")
+                                .luminaFont(size: 13, weight: .semibold)
+                                .foregroundColor(.organicMutedFg)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .background(Color.organicCard)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    } else if plans.isEmpty {
+                        Text(appState.membershipErrorMessage ?? "Plans are not available yet. Check RevenueCat offerings and App Store products, then try again.")
+                            .luminaFont(size: 13, weight: .semibold)
+                            .foregroundColor(.organicMutedFg)
+                            .lineSpacing(3)
+                            .padding(16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.organicCard)
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    } else {
+                        ForEach(plans) { plan in
+                            let isCurrentPlan = isCurrentMembershipPlan(plan, currentProductID: currentProductID)
+                            MembershipPlanOption(
+                                title: plan.title,
+                                price: plan.price,
+                                detail: membershipPlanDetail(for: plan, isCurrentPlan: isCurrentPlan),
+                                isSelected: selectedPlan?.id == plan.id,
+                                badge: isCurrentPlan ? "Current" : (plan.isRecommended ? "Recommended" : nil)
+                            ) {
+                                selectedMembershipPlan = plan.id
+                            }
+                        }
                     }
                 }
 
                 VStack(spacing: 10) {
                     Button {
-                        appState.refreshSubscriptionFromCloud()
+                        guard let selectedPlan else { return }
+                        membershipActionError = nil
+                        Task { @MainActor in
+                            do {
+                                try await appState.purchaseSubscriptionPlan(selectedPlan.id)
+                            } catch {
+                                membershipActionError = error.localizedDescription
+                            }
+                        }
                     } label: {
                         HStack(spacing: 9) {
-                            Image(systemName: appState.hasPremiumAccess ? "checkmark.seal.fill" : "sparkles")
+                            Image(systemName: selectedPlanIsCurrent ? "checkmark.seal.fill" : "sparkles")
                                 .luminaFont(size: 14, weight: .bold)
-                            Text(appState.hasPremiumAccess ? "Plus is active" : "App Store checkout pending")
+                            Text(purchaseButtonTitle(for: selectedPlan, isCurrentPlan: selectedPlanIsCurrent))
                         }
                         .luminaFont(size: 15, weight: .bold)
                         .foregroundColor(.organicPrimaryFg)
                         .frame(maxWidth: .infinity)
                         .frame(height: 54)
-                        .background(appState.hasPremiumAccess ? Color(hex: 0x5D7052) : Color.organicMutedFg.opacity(0.62))
+                        .background(selectedPlanIsCurrent ? Color(hex: 0x5D7052) : Color.organicPrimary)
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    .disabled(!appState.hasPremiumAccess)
+                    .disabled(selectedPlanIsCurrent || appState.isMembershipLoading || selectedPlan == nil)
 
                     Button {
-                        appState.refreshSubscriptionFromCloud()
+                        membershipActionError = nil
+                        Task { @MainActor in
+                            do {
+                                try await appState.restoreRevenueCatPurchases()
+                            } catch {
+                                membershipActionError = error.localizedDescription
+                            }
+                        }
                     } label: {
                         Text("Restore purchases")
                             .luminaFont(size: 13, weight: .bold)
@@ -2071,8 +1946,23 @@ struct ProfileView: View {
                             .frame(height: 44)
                     }
                     .buttonStyle(.plain)
+                    .disabled(appState.isMembershipLoading)
 
-                    Text("Subscription state is synced from Lumia's server. StoreKit or RevenueCat will replace this placeholder before paid release.")
+                    if let message = membershipActionError ?? appState.membershipErrorMessage {
+                        Text(message)
+                            .luminaFont(size: 11, weight: .semibold)
+                            .foregroundColor(Color(hex: 0xB94A5C))
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Text("Your plan is synced to your Lumia account. Restore if you changed devices or reinstalled the app.")
+                        .luminaFont(size: 11, weight: .medium)
+                        .foregroundColor(.organicMutedFg)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("Monthly users can choose Yearly here. Apple handles the upgrade inside the same subscription group and applies the remaining value automatically when eligible.")
                         .luminaFont(size: 11, weight: .medium)
                         .foregroundColor(.organicMutedFg)
                         .multilineTextAlignment(.center)
@@ -2085,6 +1975,39 @@ struct ProfileView: View {
         .background(Color.organicBackground.ignoresSafeArea())
         .presentationDetents([.large])
         .presentationDragIndicator(.hidden)
+        .task {
+            await appState.refreshRevenueCatSubscription()
+            if selectedMembershipPlan == "yearly",
+               let recommended = appState.revenueCatPlans.first(where: { $0.isRecommended }) {
+                selectedMembershipPlan = recommended.id
+            }
+        }
+    }
+
+    private func isCurrentMembershipPlan(_ plan: RevenueCatPlan, currentProductID: String?) -> Bool {
+        guard let currentProductID else { return false }
+        return plan.productIdentifier == currentProductID
+    }
+
+    private func membershipPlanDetail(for plan: RevenueCatPlan, isCurrentPlan: Bool) -> String {
+        if isCurrentPlan {
+            return "Your current Lumia Plus plan"
+        }
+        if appState.hasPremiumAccess && plan.isRecommended {
+            return "Upgrade from Monthly to Yearly through Apple"
+        }
+        return plan.detail
+    }
+
+    private func purchaseButtonTitle(for plan: RevenueCatPlan?, isCurrentPlan: Bool) -> String {
+        guard let plan else { return "Plans unavailable" }
+        if isCurrentPlan {
+            return "Current plan"
+        }
+        if appState.hasPremiumAccess {
+            return plan.isRecommended ? "Upgrade to \(plan.title)" : "Switch to \(plan.title)"
+        }
+        return "Continue with \(plan.title)"
     }
 
     struct MembershipHeroCard: View {
@@ -2168,6 +2091,112 @@ struct ProfileView: View {
                 return [Color(hex: 0x1A2118), Color(hex: 0x2F3A2A), Color(hex: 0x3A301F)]
             }
             return [Color(hex: 0xF5E8C7), Color(hex: 0xDDE8CF), Color.organicCard]
+        }
+    }
+
+    struct MembershipUsageCard: View {
+        let isPremium: Bool
+        let allowance: SubscriptionAllowance
+
+        private var aiProgress: Double {
+            guard let limit = allowance.aiChatDailyLimit, limit > 0 else { return 1 }
+            return min(1, Double(allowance.aiChatRepliesToday) / Double(limit))
+        }
+
+        private var voiceProgress: Double {
+            guard allowance.voiceLimitSeconds > 0 else { return 0 }
+            return min(1, Double(allowance.voiceUsedSeconds) / Double(allowance.voiceLimitSeconds))
+        }
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 13) {
+                HStack {
+                    Text(isPremium ? "Plus usage" : "Free usage today")
+                        .luminaFont(size: 18, weight: .bold, design: .serif)
+                        .foregroundColor(.organicForeground)
+                    Spacer()
+                    Text(isPremium ? "MONTHLY" : "DAILY")
+                        .luminaFont(size: 9, weight: .black)
+                        .foregroundColor(.organicMutedFg)
+                        .kerning(1.2)
+                }
+
+                if isPremium {
+                    MembershipMeterRow(
+                        icon: "message.fill",
+                        title: "AI chat",
+                        detail: "Expanded fair use",
+                        progress: 1,
+                        tint: .organicPrimary
+                    )
+                } else {
+                    MembershipMeterRow(
+                        icon: "message.fill",
+                        title: "AI chat",
+                        detail: allowance.aiUsageText,
+                        progress: aiProgress,
+                        tint: .organicPrimary
+                    )
+                }
+
+                MembershipMeterRow(
+                    icon: "phone.fill",
+                    title: "Voice",
+                    detail: "\(allowance.voiceUsageText) of \(allowance.voiceLimitText)",
+                    progress: voiceProgress,
+                    tint: Color(hex: 0xD8B45D)
+                )
+            }
+            .padding(16)
+            .background(Color.organicCard)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(Color.organicBorder.opacity(0.30), lineWidth: 1)
+            }
+        }
+    }
+
+    struct MembershipMeterRow: View {
+        let icon: String
+        let title: String
+        let detail: String
+        let progress: Double
+        let tint: Color
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Image(systemName: icon)
+                        .luminaFont(size: 12, weight: .black)
+                        .foregroundColor(tint)
+                        .frame(width: 28, height: 28)
+                        .background(tint.opacity(0.11))
+                        .clipShape(Circle())
+
+                    Text(title)
+                        .luminaFont(size: 13, weight: .black)
+                        .foregroundColor(.organicForeground)
+
+                    Spacer()
+
+                    Text(detail)
+                        .luminaFont(size: 11, weight: .bold)
+                        .foregroundColor(.organicMutedFg)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.76)
+                }
+
+                GeometryReader { proxy in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.organicMuted.opacity(0.65))
+                        Capsule()
+                            .fill(tint)
+                            .frame(width: max(10, proxy.size.width * progress))
+                    }
+                }
+                .frame(height: 7)
+            }
         }
     }
 
@@ -2442,6 +2471,18 @@ struct ProfileView: View {
 
     var federatedAuthButtons: some View {
         VStack(spacing: 10) {
+            SignInWithAppleButton(
+                authMode == .register ? .signUp : .signIn,
+                onRequest: prepareAppleAuthorizationRequest,
+                onCompletion: handleAppleAuthorization
+            )
+            .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+            .frame(maxWidth: .infinity)
+            .frame(height: 50)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .disabled(isAuthSubmitting)
+            .opacity(isAuthSubmitting ? 0.72 : 1)
+
             Button(action: handleGoogleSignIn) {
                 HStack(spacing: 10) {
                     Image(systemName: accountProviderIcon(.google))
@@ -2476,39 +2517,75 @@ struct ProfileView: View {
                         confirmPassword: authConfirmPassword
                     )
                 case (.signIn, .phone):
-                    throw LuminaAuthError.providerUnavailable("Phone sign-in needs Firebase Phone Auth and APNs setup before release.")
+                    throw LuminaAuthError.providerUnavailable("Phone sign-in is not available yet. Use email, Apple, or Google for now.")
                 case (.register, .phone):
-                    throw LuminaAuthError.providerUnavailable("Phone registration needs Firebase Phone Auth and APNs setup before release.")
+                    throw LuminaAuthError.providerUnavailable("Phone registration is not available yet. Use email, Apple, or Google for now.")
                 }
                 resetAuthFormAfterSuccess()
             } catch {
-                authErrorMessage = error.localizedDescription
+                authErrorMessage = userFacingAuthError(error)
             }
             isAuthSubmitting = false
+        }
+    }
+
+    func prepareAppleAuthorizationRequest(_ request: ASAuthorizationAppleIDRequest) {
+        authErrorMessage = nil
+        do {
+            let nonce = try AppleSignInNonce.random()
+            currentAppleNonce = nonce
+            request.requestedScopes = [.fullName, .email]
+            request.nonce = AppleSignInNonce.sha256(nonce)
+        } catch {
+            currentAppleNonce = nil
+            authErrorMessage = userFacingAuthError(error)
         }
     }
 
     func handleAppleAuthorization(_ result: Result<ASAuthorization, Error>) {
         switch result {
         case .success(let authorization):
+            guard !isAuthSubmitting else { return }
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
                 authErrorMessage = "Apple authorization did not return a usable credential."
                 return
             }
-            let formatter = PersonNameComponentsFormatter()
-            let displayName = credential.fullName.flatMap { formatter.string(from: $0).isEmpty ? nil : formatter.string(from: $0) }
-            do {
-                try appState.signInWithApple(
-                    providerUserID: credential.user,
-                    displayName: displayName,
-                    email: credential.email
-                )
-                resetAuthFormAfterSuccess()
-            } catch {
-                authErrorMessage = error.localizedDescription
+            guard let rawNonce = currentAppleNonce else {
+                authErrorMessage = "Apple sign-in could not complete securely. Please try again."
+                return
+            }
+            guard let tokenData = credential.identityToken,
+                  let idToken = String(data: tokenData, encoding: .utf8) else {
+                authErrorMessage = "Apple sign-in did not return an identity token."
+                currentAppleNonce = nil
+                return
+            }
+
+            authErrorMessage = nil
+            isAuthSubmitting = true
+            Task {
+                do {
+                    try await appState.signInWithApple(
+                        idToken: idToken,
+                        rawNonce: rawNonce,
+                        fullName: credential.fullName,
+                        email: credential.email
+                    )
+                    resetAuthFormAfterSuccess()
+                } catch {
+                    authErrorMessage = userFacingAuthError(error)
+                }
+                currentAppleNonce = nil
+                isAuthSubmitting = false
             }
         case .failure(let error):
-            authErrorMessage = error.localizedDescription
+            currentAppleNonce = nil
+            if let authorizationError = error as? ASAuthorizationError,
+               authorizationError.code == .canceled {
+                authErrorMessage = nil
+                return
+            }
+            authErrorMessage = userFacingAuthError(error)
         }
     }
 
@@ -2521,7 +2598,7 @@ struct ProfileView: View {
                 try await appState.signInWithGoogle()
                 resetAuthFormAfterSuccess()
             } catch {
-                authErrorMessage = error.localizedDescription
+                authErrorMessage = userFacingAuthError(error)
             }
             isAuthSubmitting = false
         }
@@ -2535,6 +2612,89 @@ struct ProfileView: View {
     }
 
     // ── Edit Sheets ───────────────────────────────────────────────────
+    var identitySheet: some View {
+        ProfileSheetChrome(
+            title: "Profile",
+            saveTitle: "Save",
+            canSave: true,
+            onCancel: { showIdentityEdit = false },
+            onSave: {
+                appState.profileAvatarID = editedAvatarID
+                appState.profileGender = editedGender
+                showIdentityEdit = false
+            }
+        ) {
+            VStack(spacing: 18) {
+                ProfileAvatarImage(avatarID: editedAvatarID, fallbackText: initials, size: 104)
+                    .padding(.top, 2)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    ProfileFieldLabel("Avatar")
+
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                        ForEach(ProfileAvatarID.allCases) { avatar in
+                            Button {
+                                editedAvatarID = avatar
+                            } label: {
+                                VStack(spacing: 7) {
+                                    ProfileAvatarImage(avatarID: avatar, fallbackText: "", size: 64)
+                                        .overlay {
+                                            if editedAvatarID == avatar {
+                                                RoundedRectangle(cornerRadius: 21, style: .continuous)
+                                                    .strokeBorder(Color.organicPrimary, lineWidth: 3)
+                                            }
+                                        }
+                                    Text(avatar.title)
+                                        .luminaFont(size: 11, weight: .black)
+                                        .foregroundColor(editedAvatarID == avatar ? .organicPrimary : .organicMutedFg)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(
+                                    (editedAvatarID == avatar ? Color.organicPrimary.opacity(0.12) : Color.organicMuted.opacity(0.56)),
+                                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    ProfileFieldLabel("Gender")
+
+                    VStack(spacing: 8) {
+                        ForEach(ProfileGender.allCases) { gender in
+                            Button {
+                                editedGender = gender
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: editedGender == gender ? "checkmark.circle.fill" : "circle")
+                                        .luminaFont(size: 15, weight: .bold)
+                                        .foregroundColor(editedGender == gender ? .organicPrimary : .organicMutedFg.opacity(0.72))
+
+                                    Text(gender.title)
+                                        .luminaFont(size: 14, weight: .bold)
+                                        .foregroundColor(.organicForeground)
+
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(.horizontal, 14)
+                                .frame(height: 44)
+                                .background(
+                                    editedGender == gender ? Color.organicPrimary.opacity(0.10) : Color.organicMuted.opacity(0.48),
+                                    in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .presentationDetents([.height(appState.useLargeText ? 690 : 620), .large])
+    }
+
     var nameSheet: some View {
         ProfileSheetChrome(
             title: "Display Name",
@@ -2595,12 +2755,12 @@ struct ProfileView: View {
         .presentationDetents([.height(appState.useLargeText ? 430 : 370)])
     }
 
-    var apiKeySheet: some View {
+    var aiConnectionSheet: some View {
         ProfileSheetChrome(
-            title: "Lumia AI",
-            saveTitle: isTestingAPIKey ? "Testing..." : "Test",
-            canSave: !isTestingAPIKey,
-            onCancel: { showAPIKey = false },
+            title: "AI Connection",
+            saveTitle: isTestingAIConnection ? "Checking..." : (aiConnectionStatusMessage == nil ? "Check Status" : "Check Again"),
+            canSave: !isTestingAIConnection,
+            onCancel: { showAIConnection = false },
             onSave: {
                 testAIConnection()
             }
@@ -2616,11 +2776,11 @@ struct ProfileView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Lumia is connected through the app backend.")
+                    Text("Service Status")
                         .luminaFont(size: 15, weight: .bold)
                         .foregroundColor(.organicForeground)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("Model choice and safety rules update centrally, so every client stays consistent.")
+                    Text("AI support is managed securely by Lumia. No setup is needed on this device.")
                         .luminaFont(size: 12, weight: .medium)
                         .foregroundColor(.organicMutedFg)
                         .lineSpacing(2)
@@ -2632,12 +2792,28 @@ struct ProfileView: View {
             .background(Color.organicMuted.opacity(0.82))
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
 
-            if let apiKeyErrorMessage {
+            if let aiConnectionStatusMessage {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .luminaFont(size: 12, weight: .black)
+                        .foregroundStyle(Color.organicPrimary)
+                    Text(aiConnectionStatusMessage)
+                        .luminaFont(size: 12, weight: .semibold)
+                        .foregroundStyle(Color.organicPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.organicPrimary.opacity(0.10))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+
+            if let aiConnectionErrorMessage {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .luminaFont(size: 12, weight: .black)
                         .foregroundStyle(Color(hex: 0xBE185D))
-                    Text(apiKeyErrorMessage)
+                    Text(aiConnectionErrorMessage)
                         .luminaFont(size: 12, weight: .semibold)
                         .foregroundStyle(Color(hex: 0xBE185D))
                         .fixedSize(horizontal: false, vertical: true)
@@ -2648,11 +2824,11 @@ struct ProfileView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
 
-            if isTestingAPIKey {
+            if isTestingAIConnection {
                 HStack(spacing: 8) {
                     ProgressView()
                         .tint(Color.organicPrimary)
-                    Text("Testing Lumia connection...")
+                    Text("Checking AI service status...")
                         .luminaFont(size: 12, weight: .bold)
                         .foregroundStyle(Color.organicMutedFg)
                 }
@@ -2663,26 +2839,80 @@ struct ProfileView: View {
     }
 
     private func testAIConnection() {
-        apiKeyErrorMessage = nil
-        isTestingAPIKey = true
+        aiConnectionErrorMessage = nil
+        aiConnectionStatusMessage = nil
+        isTestingAIConnection = true
 
         Task {
             do {
-                _ = try await GeminiService.shared.generateContent(
-                    userPrompt: "Reply with only the word OK.",
-                    systemInstruction: "You are a connection test. Reply with only OK."
-                )
+                let config = try await withAIConnectionTimeout(seconds: 12) {
+                    try await GeminiService.shared.runtimeConfig()
+                }
                 await MainActor.run {
-                    isTestingAPIKey = false
-                    showAPIKey = false
+                    isTestingAIConnection = false
+                    aiConnectionStatusMessage = config.promptVersion.isEmpty
+                        ? "AI service is connected."
+                        : "AI service is connected. Prompt \(config.promptVersion)."
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    isTestingAIConnection = false
+                    aiConnectionErrorMessage = "AI service check was cancelled."
                 }
             } catch {
                 await MainActor.run {
-                    isTestingAPIKey = false
-                    apiKeyErrorMessage = error.localizedDescription
+                    isTestingAIConnection = false
+                    aiConnectionErrorMessage = GeminiService.userFacingMessage(
+                        for: error,
+                        fallback: "AI service is unavailable right now. Try again in a moment."
+                    )
                 }
             }
         }
+    }
+
+    private func withAIConnectionTimeout<T>(
+        seconds: UInt64,
+        operation: @escaping () async throws -> T
+    ) async throws -> T {
+        try await withThrowingTaskGroup(of: T.self) { group in
+            group.addTask {
+                try await operation()
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: seconds * 1_000_000_000)
+                throw URLError(.timedOut)
+            }
+
+            guard let result = try await group.next() else {
+                throw URLError(.timedOut)
+            }
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private func userFacingAuthError(_ error: Error) -> String {
+        if let authError = error as? LuminaAuthError {
+            return authError.localizedDescription
+        }
+
+        let message = error.localizedDescription
+        if message.localizedCaseInsensitiveContains("network") ||
+            message.localizedCaseInsensitiveContains("timed out") ||
+            message.localizedCaseInsensitiveContains("offline") {
+            return "The connection was interrupted. Check your network and try again."
+        }
+        if message.localizedCaseInsensitiveContains("password") {
+            return "The email or password does not look right."
+        }
+        if message.localizedCaseInsensitiveContains("email") {
+            return "Check the email address and try again."
+        }
+        if message.localizedCaseInsensitiveContains("cancel") {
+            return "Sign in was cancelled."
+        }
+        return "Sign in could not be completed. Please try again."
     }
 
     var goalsSheet: some View {

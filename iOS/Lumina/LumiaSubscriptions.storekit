@@ -1,0 +1,92 @@
+{
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "7C9F4B2A",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA"
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "lumia_plus",
+      "localizations" : [
+        {
+          "locale" : "en_US",
+          "name" : "Lumia Plus"
+        }
+      ],
+      "name" : "Lumia Plus",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "9.99",
+          "familyShareable" : false,
+          "groupNumber" : 2,
+          "internalID" : "900001001",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Monthly access to Lumia Plus features.",
+              "displayName" : "Lumia Plus Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "lumia_plus_monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Lumia Plus Monthly",
+          "subscriptionGroupID" : "lumia_plus",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "69.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "900001002",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Yearly access to Lumia Plus features.",
+              "displayName" : "Lumia Plus Yearly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "lumia_plus_yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Lumia Plus Yearly",
+          "subscriptionGroupID" : "lumia_plus",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}

@@ -1,0 +1,299 @@
+{
+  "schemaVersion": 2,
+  "appName": "Lumia",
+  "themeId": "bloom-roast",
+  "connectedCanvas": false,
+  "locales": [
+    "en"
+  ],
+  "locale": "en",
+  "device": "iphone",
+  "orientation": "portrait",
+  "appIcon": "/app-icon.png",
+  "slidesByDevice": {
+    "iphone": [
+      {
+        "id": "lumia-current-01-home",
+        "layout": "hero",
+        "label": {
+          "en": "LUMIA"
+        },
+        "headline": {
+          "en": "Meet yourself\nwhere you are."
+        },
+        "screenshot": "/screenshots/apple/iphone/{locale}/01.png",
+        "transforms": {
+          "caption": {
+            "x": 104,
+            "y": 150,
+            "width": 1112,
+            "height": 610,
+            "rotation": 0,
+            "zIndex": 4
+          },
+          "device": {
+            "x": 176,
+            "y": 825,
+            "width": 970,
+            "height": 1976,
+            "rotation": -2,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "lumia-current-02-journal",
+        "layout": "device-bottom",
+        "label": {
+          "en": "JOURNAL"
+        },
+        "headline": {
+          "en": "Start with\none sentence."
+        },
+        "screenshot": "/screenshots/apple/iphone/{locale}/02.png",
+        "transforms": {
+          "caption": {
+            "x": 104,
+            "y": 165,
+            "width": 1112,
+            "height": 590,
+            "rotation": 0,
+            "zIndex": 4
+          },
+          "device": {
+            "x": 170,
+            "y": 775,
+            "width": 980,
+            "height": 1997,
+            "rotation": 2,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "lumia-current-03-therapy",
+        "layout": "device-top",
+        "label": {
+          "en": "GUIDES"
+        },
+        "headline": {
+          "en": "Choose support\nthat fits."
+        },
+        "screenshot": "/screenshots/apple/iphone/{locale}/03.png",
+        "inverted": true,
+        "transforms": {
+          "device": {
+            "x": 158,
+            "y": -78,
+            "width": 1005,
+            "height": 2048,
+            "rotation": 0,
+            "zIndex": 3
+          },
+          "caption": {
+            "x": 104,
+            "y": 2078,
+            "width": 1112,
+            "height": 610,
+            "rotation": 0,
+            "zIndex": 4
+          }
+        }
+      },
+      {
+        "id": "lumia-current-04-garden",
+        "layout": "device-bottom",
+        "label": {
+          "en": "LUMINA GARDEN"
+        },
+        "headline": {
+          "en": "Care leaves\na trace."
+        },
+        "screenshot": "/screenshots/apple/iphone/{locale}/04.png",
+        "inverted": true,
+        "transforms": {
+          "caption": {
+            "x": 104,
+            "y": 148,
+            "width": 1112,
+            "height": 590,
+            "rotation": 0,
+            "zIndex": 4
+          },
+          "device": {
+            "x": 150,
+            "y": 775,
+            "width": 1020,
+            "height": 2078,
+            "rotation": -1,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "lumia-current-05-sanctuary",
+        "layout": "device-top",
+        "label": {
+          "en": "SANCTUARY"
+        },
+        "headline": {
+          "en": "Take one\nquiet minute."
+        },
+        "screenshot": "/screenshots/apple/iphone/{locale}/05.png",
+        "transforms": {
+          "device": {
+            "x": 176,
+            "y": -62,
+            "width": 970,
+            "height": 1976,
+            "rotation": 0,
+            "zIndex": 3
+          },
+          "caption": {
+            "x": 104,
+            "y": 2085,
+            "width": 1112,
+            "height": 610,
+            "rotation": 0,
+            "zIndex": 4
+          }
+        }
+      }
+    ],
+    "android": [],
+    "ipad": [
+      {
+        "id": "lumia-ipad-01-home",
+        "layout": "hero",
+        "label": {
+          "en": "LUMIA FOR IPAD"
+        },
+        "headline": {
+          "en": "Meet yourself\nwith more room."
+        },
+        "screenshot": "/screenshots/apple/ipad/{locale}/01.png"
+      },
+      {
+        "id": "lumia-ipad-02-journal",
+        "layout": "device-bottom",
+        "label": {
+          "en": "JOURNAL"
+        },
+        "headline": {
+          "en": "Start small.\nSee the pattern."
+        },
+        "screenshot": "/screenshots/apple/ipad/{locale}/02.png",
+        "transforms": {
+          "caption": {
+            "x": 150,
+            "y": 155,
+            "width": 1764,
+            "height": 590,
+            "rotation": 0,
+            "zIndex": 4
+          },
+          "device": {
+            "x": 218,
+            "y": 805,
+            "width": 1628,
+            "height": 2114,
+            "rotation": 1,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "lumia-ipad-03-therapy",
+        "layout": "device-top",
+        "label": {
+          "en": "GUIDES"
+        },
+        "headline": {
+          "en": "Choose support\nthat fits today."
+        },
+        "screenshot": "/screenshots/apple/ipad/{locale}/03.png",
+        "inverted": true,
+        "transforms": {
+          "device": {
+            "x": 224,
+            "y": -185,
+            "width": 1616,
+            "height": 2099,
+            "rotation": 0,
+            "zIndex": 3
+          },
+          "caption": {
+            "x": 150,
+            "y": 1960,
+            "width": 1764,
+            "height": 610,
+            "rotation": 0,
+            "zIndex": 4
+          }
+        }
+      },
+      {
+        "id": "lumia-ipad-04-garden",
+        "layout": "device-bottom",
+        "label": {
+          "en": "LUMINA GARDEN"
+        },
+        "headline": {
+          "en": "Care leaves\na visible trace."
+        },
+        "screenshot": "/screenshots/apple/ipad/{locale}/04.png",
+        "inverted": true,
+        "transforms": {
+          "caption": {
+            "x": 150,
+            "y": 145,
+            "width": 1764,
+            "height": 585,
+            "rotation": 0,
+            "zIndex": 4
+          },
+          "device": {
+            "x": 170,
+            "y": 730,
+            "width": 1724,
+            "height": 2239,
+            "rotation": -1,
+            "zIndex": 3
+          }
+        }
+      },
+      {
+        "id": "lumia-ipad-05-sanctuary",
+        "layout": "device-top",
+        "label": {
+          "en": "SANCTUARY"
+        },
+        "headline": {
+          "en": "Take one\nquiet minute."
+        },
+        "screenshot": "/screenshots/apple/ipad/{locale}/05.png",
+        "transforms": {
+          "device": {
+            "x": 236,
+            "y": -155,
+            "width": 1592,
+            "height": 2068,
+            "rotation": 0,
+            "zIndex": 3
+          },
+          "caption": {
+            "x": 150,
+            "y": 1965,
+            "width": 1764,
+            "height": 610,
+            "rotation": 0,
+            "zIndex": 4
+          }
+        }
+      }
+    ],
+    "android-7": [],
+    "android-10": [],
+    "feature-graphic": []
+  }
+}

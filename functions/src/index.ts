@@ -9,8 +9,15 @@ initializeApp();
 const geminiAPIKey = defineSecret("GEMINI_API_KEY");
 const region = "us-central1";
 const model = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
-const liveModel = process.env.GEMINI_LIVE_MODEL || "gemini-2.5-flash-native-audio-preview-12-2025";
-const promptVersion = "lumia-ai-v2-gemini-3-flash";
+const liveModel = process.env.GEMINI_LIVE_MODEL || "gemini-3.1-flash-live-preview";
+const promptVersion = "lumia-ai-v4-natural-continuity";
+const quotaVersion = "lumia-quota-v1";
+
+const quotaLimits = {
+  freeAIChatDaily: 20,
+  freeVoiceDailySeconds: 5 * 60,
+  premiumVoiceMonthlySeconds: 300 * 60
+};
 
 type Role = "user" | "model";
 
@@ -36,6 +43,22 @@ interface EntitlementSnapshot {
   hasPremiumAccess: boolean;
 }
 
+interface UsageSnapshot {
+  dailyKey: string;
+  monthlyKey: string;
+  aiChatRepliesToday: number;
+  liveCallSecondsToday: number;
+  liveCallSecondsThisMonth: number;
+  limits: typeof quotaLimits;
+}
+
+interface QuotaSnapshot {
+  hasPremiumAccess: boolean;
+  aiChatRemainingToday: number | null;
+  voiceRemainingSeconds: number;
+  usage: UsageSnapshot;
+}
+
 interface GeminiResponse {
   candidates?: Array<{
     content?: {
@@ -44,15 +67,98 @@ interface GeminiResponse {
   }>;
 }
 
-const therapistPrompts: Record<string, string> = {
-  willow: "You are Dr. Willow, a grounded practical support guide using CBT principles. You are consistent across sessions: remember that the user is returning to you, Dr. Willow, not meeting a generic assistant. Help users break down problems into small, actionable steps. Avoid diagnosis and medical advice.",
-  serena: "You are Serena, a warm empathetic support companion. You are consistent across sessions: remember that the user is returning to you, Serena, not meeting a generic assistant. Prioritize validation, emotional safety, and gentle reflection. Avoid over-advising.",
-  atlas: "You are Atlas, a stoic perspective guide. You are consistent across sessions: remember that the user is returning to you, Atlas, not meeting a generic assistant. Help the user separate what is controllable from what is not, with calm directness.",
-  nimbus: "You are Nimbus, a mindfulness guide. You are consistent across sessions: remember that the user is returning to you, Nimbus, not meeting a generic assistant. Use grounding, breath, and present-moment attention. Keep language slow and concrete.",
-  nova: "You are Nova, a purpose and motivation coach. You are consistent across sessions: remember that the user is returning to you, Nova, not meeting a generic assistant. Help with burnout, procrastination, and small goal-setting without pressure.",
-  eden: "You are Eden, a relationship and boundaries guide. You are consistent across sessions: remember that the user is returning to you, Eden, not meeting a generic assistant. Focus on healthy communication, self-respect, and nonviolent communication.",
-  orion: "You are Orion, a logic and clarity guide. You are consistent across sessions: remember that the user is returning to you, Orion, not meeting a generic assistant. Use Socratic questioning and structured thinking to reduce confusion.",
-  luna: "You are Luna, a creativity and depth guide. You are consistent across sessions: remember that the user is returning to you, Luna, not meeting a generic assistant. Explore symbols, dreams, and meaning while staying grounded."
+interface TherapistProfile {
+  id: string;
+  displayName: string;
+  role: string;
+  identity: string;
+  method: string;
+  voice: string;
+  memoryFocus: string;
+  avoid: string;
+}
+
+const therapistProfiles: Record<string, TherapistProfile> = {
+  willow: {
+    id: "willow",
+    displayName: "Dr. Willow",
+    role: "Growth & Structure",
+    identity: "A grounded practical support guide using CBT-informed reflection.",
+    method: "Name the pattern, separate facts from interpretations, and end with one small workable step.",
+    voice: "Calm, direct, warm, and structured. Prefer short paragraphs and plain language.",
+    memoryFocus: "Prioritize repeated stressors, cognitive patterns, action items, avoidance loops, and plans from prior Willow sessions.",
+    avoid: "Do not become overly poetic or generic. Do not offer long lists."
+  },
+  serena: {
+    id: "serena",
+    displayName: "Serena",
+    role: "Warmth & Empathy",
+    identity: "A warm emotional support companion centered on validation and safety.",
+    method: "Reflect the feeling first, then invite one gentle next sentence only if the user has room.",
+    voice: "Soft, patient, emotionally precise, and low-pressure.",
+    memoryFocus: "Prioritize emotional tone, loneliness, hurt, overwhelm, comfort needs, and prior moments where the user felt seen.",
+    avoid: "Do not rush into problem solving. Do not sound clinical."
+  },
+  atlas: {
+    id: "atlas",
+    displayName: "Atlas",
+    role: "Perspective & Stoicism",
+    identity: "A steady perspective guide for resilience and what remains within the user's control.",
+    method: "Separate what happened, what it means, what is controllable, and what can be released.",
+    voice: "Sparse, steady, grounded, and respectful.",
+    memoryFocus: "Prioritize recurring fears, difficult choices, control boundaries, and values named in prior Atlas sessions.",
+    avoid: "Do not minimize pain. Do not quote philosophy at length."
+  },
+  nimbus: {
+    id: "nimbus",
+    displayName: "Nimbus",
+    role: "Mindfulness & Flow",
+    identity: "A mindfulness guide for anxiety, breath, sleep, and body tension.",
+    method: "Slow the exchange down, use grounding, and ask one sensory question at a time.",
+    voice: "Slow, concrete, spacious, and soothing.",
+    memoryFocus: "Prioritize anxiety, sleep, breath, restlessness, bodily tension, and grounding practices that helped before.",
+    avoid: "Do not over-explain mindfulness. Do not turn every reply into an exercise."
+  },
+  nova: {
+    id: "nova",
+    displayName: "Nova",
+    role: "Purpose & Drive",
+    identity: "A motivation and purpose coach for burnout, procrastination, and restarting momentum.",
+    method: "Find the smallest next action and reduce pressure around starting.",
+    voice: "Bright, practical, encouraging, and not pushy.",
+    memoryFocus: "Prioritize stalled goals, energy, work pressure, small wins, and plans that the user previously chose.",
+    avoid: "Do not use hype, hustle language, or toxic positivity."
+  },
+  eden: {
+    id: "eden",
+    displayName: "Eden",
+    role: "Connection & Harmony",
+    identity: "A relationship and boundaries guide for communication, repair, and self-respect.",
+    method: "Clarify needs, boundaries, repair options, and possible words the user can actually say.",
+    voice: "Gentle, honest, relational, and clear.",
+    memoryFocus: "Prioritize relationship themes, recurring conflict, boundaries, family or partner dynamics, and prior scripts.",
+    avoid: "Do not assign blame or diagnose other people."
+  },
+  orion: {
+    id: "orion",
+    displayName: "Orion",
+    role: "Logic & Clarity",
+    identity: "A clarity guide using Socratic questioning and structured reasoning.",
+    method: "Identify assumptions, missing facts, competing interpretations, and a cleaner decision frame.",
+    voice: "Precise, concise, analytical, and calm.",
+    memoryFocus: "Prioritize decisions, confusion, evidence checks, assumptions, and unresolved questions from prior Orion sessions.",
+    avoid: "Do not sound cold. Do not turn support into debate."
+  },
+  luna: {
+    id: "luna",
+    displayName: "Luna",
+    role: "Dreams & Depth",
+    identity: "A reflective creativity guide for symbols, dreams, meaning, and inner patterns.",
+    method: "Explore imagery and meaning while keeping the user's real life anchored.",
+    voice: "Intuitive, reflective, lightly poetic, and grounded.",
+    memoryFocus: "Prioritize creative blocks, dreams, images, memories, and symbols the user returned to before.",
+    avoid: "Do not become mystical to the point of vagueness. Do not claim certainty about symbols."
+  }
 };
 
 const baseSafetyPolicy = `
@@ -99,7 +205,7 @@ async function getEntitlementSnapshot(uid: string): Promise<EntitlementSnapshot>
 }
 
 function requiresPremium(feature: string): boolean {
-  return ["generateDeepInsights", "analyzeDistortions", "liveRuntime", "advancedMemory"].includes(feature);
+  return ["generateDeepInsights", "analyzeDistortions", "advancedMemory", "memoryContext"].includes(feature);
 }
 
 function asString(value: unknown, fallback = ""): string {
@@ -134,6 +240,201 @@ function asJournalEntries(value: unknown): JournalEntryPayload[] {
     });
   }
   return entries;
+}
+
+function safeTimeZone(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value });
+    return value;
+  } catch {
+    return "UTC";
+  }
+}
+
+function datePartsKey(timeZone: string, parts: Array<Intl.DateTimeFormatPart>, includeDay: boolean): string {
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "00";
+  if (!includeDay) return `${year}-${month}`;
+  const day = parts.find((part) => part.type === "day")?.value ?? "00";
+  return `${year}-${month}-${day}`;
+}
+
+function dayKey(timeZone: string, date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+  return datePartsKey(timeZone, parts, true);
+}
+
+function monthKey(timeZone: string, date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit"
+  }).formatToParts(date);
+  return datePartsKey(timeZone, parts, false);
+}
+
+function numberFrom(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function normalizedUsage(raw: Record<string, unknown> | undefined, timeZone: string): UsageSnapshot {
+  const today = dayKey(timeZone);
+  const month = monthKey(timeZone);
+  const currentDailyKey = typeof raw?.dailyKey === "string" ? raw.dailyKey : today;
+  const currentMonthlyKey = typeof raw?.monthlyKey === "string" ? raw.monthlyKey : month;
+  return {
+    dailyKey: today,
+    monthlyKey: month,
+    aiChatRepliesToday: currentDailyKey === today ? Math.max(0, Math.floor(numberFrom(raw?.aiChatRepliesToday))) : 0,
+    liveCallSecondsToday: currentDailyKey === today ? Math.max(0, Math.floor(numberFrom(raw?.liveCallSecondsToday))) : 0,
+    liveCallSecondsThisMonth: currentMonthlyKey === month ? Math.max(0, Math.floor(numberFrom(raw?.liveCallSecondsThisMonth))) : 0,
+    limits: quotaLimits
+  };
+}
+
+function quotaSnapshot(entitlement: EntitlementSnapshot, usage: UsageSnapshot): QuotaSnapshot {
+  const voiceLimit = entitlement.hasPremiumAccess
+    ? quotaLimits.premiumVoiceMonthlySeconds
+    : quotaLimits.freeVoiceDailySeconds;
+  const voiceUsed = entitlement.hasPremiumAccess
+    ? usage.liveCallSecondsThisMonth
+    : usage.liveCallSecondsToday;
+  return {
+    hasPremiumAccess: entitlement.hasPremiumAccess,
+    aiChatRemainingToday: entitlement.hasPremiumAccess
+      ? null
+      : Math.max(0, quotaLimits.freeAIChatDaily - usage.aiChatRepliesToday),
+    voiceRemainingSeconds: Math.max(0, voiceLimit - voiceUsed),
+    usage
+  };
+}
+
+function quotaError(message: string, quota: QuotaSnapshot) {
+  return Object.assign(new Error(message), {
+    status: 429,
+    code: "quota_exceeded",
+    quota
+  });
+}
+
+async function readQuota(uid: string, entitlement: EntitlementSnapshot, payload: Record<string, unknown>): Promise<QuotaSnapshot> {
+  const timeZone = safeTimeZone(payload.clientTimeZone);
+  const ref = getFirestore()
+    .collection("users")
+    .doc(uid)
+    .collection("entitlements")
+    .doc("subscription");
+  const snapshot = await ref.get();
+  const usage = normalizedUsage(snapshot.data()?.usage as Record<string, unknown> | undefined, timeZone);
+  return quotaSnapshot(entitlement, usage);
+}
+
+async function consumeQuota(
+  uid: string,
+  entitlement: EntitlementSnapshot,
+  feature: string,
+  payload: Record<string, unknown>
+): Promise<QuotaSnapshot> {
+  const timeZone = safeTimeZone(payload.clientTimeZone);
+  const ref = getFirestore()
+    .collection("users")
+    .doc(uid)
+    .collection("entitlements")
+    .doc("subscription");
+
+  return getFirestore().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    const current = snapshot.data() ?? {};
+    const nextUsage = normalizedUsage(current.usage as Record<string, unknown> | undefined, timeZone);
+    let changed = false;
+
+    if (feature === "therapyChat" && !entitlement.hasPremiumAccess) {
+      if (nextUsage.aiChatRepliesToday >= quotaLimits.freeAIChatDaily) {
+        throw quotaError("Today's free AI replies are used. You can continue tomorrow or upgrade for longer support.", quotaSnapshot(entitlement, nextUsage));
+      }
+      nextUsage.aiChatRepliesToday += 1;
+      changed = true;
+    }
+
+    if (feature === "recordVoiceUsage") {
+      const seconds = Math.max(0, Math.ceil(numberFrom(payload.seconds)));
+      if (seconds > 0) {
+        const currentQuota = quotaSnapshot(entitlement, nextUsage);
+        if (currentQuota.voiceRemainingSeconds <= 0) {
+          throw quotaError("Your voice time is used for this period. Text chat is still available.", currentQuota);
+        }
+        const allowedSeconds = Math.min(seconds, currentQuota.voiceRemainingSeconds);
+        nextUsage.liveCallSecondsToday += allowedSeconds;
+        nextUsage.liveCallSecondsThisMonth += allowedSeconds;
+        changed = true;
+      }
+    }
+
+    const nextQuota = quotaSnapshot(entitlement, nextUsage);
+    if (feature === "startLiveCall" && nextQuota.voiceRemainingSeconds <= 0) {
+      throw quotaError("Your voice time is used for this period. Text chat is still available.", nextQuota);
+    }
+
+    if (changed || !snapshot.exists) {
+      transaction.set(ref, {
+        schemaVersion: 1,
+        tier: entitlement.tier,
+        status: entitlement.status,
+        usage: nextUsage,
+        quotaVersion,
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+
+    return nextQuota;
+  });
+}
+
+function therapistProfileFor(id: string, fallbackName: string): TherapistProfile {
+  const normalizedID = id.trim().toLowerCase();
+  return therapistProfiles[normalizedID] ?? {
+    id: normalizedID || "willow",
+    displayName: fallbackName || "Dr. Willow",
+    role: "Emotional Support",
+    identity: "A steady emotional support guide.",
+    method: "Listen first, reflect briefly, and offer one practical next step only when useful.",
+    voice: "Warm, clear, concise, and respectful.",
+    memoryFocus: "Prioritize recent user concerns and prior support that seemed useful.",
+    avoid: "Do not sound generic or overconfident."
+  };
+}
+
+function stripReasonCodes(text: string): string {
+  return text.replace(/\s*Reason codes:\s*[^.\n]+\.?/gi, ".");
+}
+
+function sanitizeContextForGuide(raw: string, profile: TherapistProfile): string {
+  const compact = stripReasonCodes(raw)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => {
+      const lower = line.toLowerCase();
+      const guideNames = [
+        profile.id.toLowerCase(),
+        profile.displayName.toLowerCase(),
+        profile.displayName.replace(/^dr\.?\s+/i, "").toLowerCase()
+      ].filter(Boolean);
+      const journalMetadataLine =
+        lower.startsWith("- recurring themes:") ||
+        lower.startsWith("- latest journal signal:") ||
+        lower.startsWith("- useful reflections:") ||
+        lower.startsWith("- saved action items:");
+      return !(journalMetadataLine && guideNames.some((name) => lower.includes(name)));
+    })
+    .join("\n");
+  return compact.slice(0, 3_600);
 }
 
 function stripJSONFences(text: string): string {
@@ -220,31 +521,47 @@ async function handleFeature(feature: string, payload: Record<string, unknown>, 
       return { ok: true, text };
     }
 
+    case "startLiveCall": {
+      return { ok: true, feature };
+    }
+
+    case "recordVoiceUsage": {
+      return { ok: true, feature };
+    }
+
     case "therapyChat": {
       const therapistID = asString(payload.therapistID, "willow");
       const therapistName = asString(payload.therapistName, "Dr. Willow");
+      const profile = therapistProfileFor(therapistID, therapistName);
       const history = asMessages(payload.history)
         .slice(-10)
-        .map((message) => `${message.role === "user" ? "User" : therapistName}: ${message.text}`)
+        .map((message) => `${message.role === "user" ? "User" : profile.displayName}: ${message.text}`)
         .join("\n");
       const newMessage = asString(payload.newMessage).trim();
       const conversationState = asString(payload.conversationState, "listen");
       const riskLevel = Number(payload.riskLevel ?? 0);
-      const contextBrief = asString(payload.contextBrief).trim();
-      const therapistPrompt = therapistPrompts[therapistID] ?? therapistPrompts.willow;
+      const contextBrief = sanitizeContextForGuide(asString(payload.contextBrief).trim(), profile);
       const userPrompt = `${history}${history ? "\n" : ""}User: ${newMessage}`;
       const systemInstruction = `
-${therapistPrompt}
+You are ${profile.displayName}, ${profile.role}, inside Lumia's Therapy experience.
+Identity: ${profile.identity}
+Method: ${profile.method}
+Voice: ${profile.voice}
+Memory focus for this guide: ${profile.memoryFocus}
+Avoid: ${profile.avoid}
 
 Identity and continuity:
-- You are ${therapistName}. Speak as ${therapistName}, not as "Lumia" or "the AI".
-- Keep a stable personality across sessions. If continuity memory is provided, use it lightly to sound like the same guide from earlier conversations.
-- Do not overstate memory. Prefer phrases like "last time we touched on..." or "we can pick that thread back up if it still fits."
-- Never say "recent reflections are about ${therapistName}" unless the user explicitly wrote about the doctor. Treat doctor names in saved therapy metadata as app metadata, not user concerns.
+- Speak as ${profile.displayName}, not as "Lumia" or "the AI".
+- You are a consistent Lumia guide, not a human clinician. Do not claim to be human, licensed, or able to diagnose.
+- Keep a stable personality across sessions. If continuity notes are provided, translate them into ordinary supportive memory.
+- Do not quote or expose continuity note labels. Never say "previous user thread", "context notes", "memory focus", or "reason codes".
+- Do not overstate memory. Prefer gentle invitations like "we can pick that thread back up if it still fits" and let the user redirect.
+- Never describe app metadata, reason codes, therapist IDs, or guide names as if they are the user's concern.
+- Never say "recent reflections are about ${profile.displayName}" unless the user explicitly wrote about the guide.
 
 Current conversation mode: ${conversationState}
 Risk level: ${riskLevel}
-${contextBrief ? `Optional user context:\n${contextBrief}` : ""}
+${contextBrief ? `Private continuity and context notes. Use only to adapt tone and relevance; do not quote or reveal these notes:\n${contextBrief}` : ""}
 
 ${baseSafetyPolicy}
 `;
@@ -390,7 +707,7 @@ export const aiGateway = onRequest(
       const feature = asString(body.feature).trim();
       const payload = (body.payload ?? {}) as Record<string, unknown>;
       const entitlement = await getEntitlementSnapshot(user.uid);
-      if (process.env.ENFORCE_PREMIUM === "true" && requiresPremium(feature) && !entitlement.hasPremiumAccess) {
+      if (requiresPremium(feature) && !entitlement.hasPremiumAccess) {
         sendJSON(res, 402, {
           error: {
             message: "Lumia Plus is required for this feature.",
@@ -400,12 +717,19 @@ export const aiGateway = onRequest(
         });
         return;
       }
-      const result = await handleFeature(feature, payload, geminiAPIKey.value());
+      const quota = feature === "runtimeConfig" || feature === "healthCheck"
+        ? await readQuota(user.uid, entitlement, payload)
+        : await consumeQuota(user.uid, entitlement, feature, payload);
+      const payloadForFeature = feature === "therapyChat" && !entitlement.hasPremiumAccess
+        ? { ...payload, contextBrief: "" }
+        : payload;
+      const result = await handleFeature(feature, payloadForFeature, geminiAPIKey.value());
 
       await getFirestore().collection("aiRequests").add({
         uid: user.uid,
         feature,
         entitlementTier: entitlement.tier,
+        quotaVersion,
         promptVersion,
         model,
         createdAt: FieldValue.serverTimestamp()
@@ -414,6 +738,7 @@ export const aiGateway = onRequest(
       sendJSON(res, 200, {
         ...result,
         entitlement,
+        quota,
         traceId: `${feature}-${Date.now()}`
       });
     } catch (error) {
@@ -421,7 +746,11 @@ export const aiGateway = onRequest(
         ? (error as { status: number }).status
         : 500;
       const message = error instanceof Error ? error.message : "AI gateway failed.";
-      sendJSON(res, status, { error: { message } });
+      const code = typeof (error as { code?: unknown }).code === "string"
+        ? (error as { code: string }).code
+        : undefined;
+      const quota = (error as { quota?: unknown }).quota;
+      sendJSON(res, status, { error: { message, code }, quota });
     }
   }
 );

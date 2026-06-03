@@ -1,0 +1,702 @@
+{
+  "role_targets": {
+    "sol": {
+      "lum": 146.79576873779297,
+      "alpha": 249.45982360839844,
+      "bottom": 677.0,
+      "anchor_x": 384.0
+    },
+    "mira": {
+      "lum": 158.46358489990234,
+      "alpha": 248.41778564453125,
+      "bottom": 677.0,
+      "anchor_x": 384.0
+    },
+    "nori": {
+      "lum": 128.62757110595703,
+      "alpha": 247.96021270751953,
+      "bottom": 677.0,
+      "anchor_x": 384.0
+    },
+    "keeper": {
+      "lum": 122.33963012695312,
+      "alpha": 249.09902954101562,
+      "bottom": 677.0,
+      "anchor_x": 384.0
+    }
+  },
+  "sequences": {
+    "GardenVisitorSolIdleSmooth": {
+      "before": {
+        "bbox_width_range": [
+          360,
+          362
+        ],
+        "bbox_height_range": [
+          540,
+          542
+        ],
+        "area_ratio": 1.062,
+        "lum_range": [
+          145.95,
+          147.37
+        ],
+        "alpha_range": [
+          249.48,
+          251.89
+        ],
+        "anchor_x_range": [
+          374.39,
+          379.44
+        ],
+        "bottom_range": [
+          676.0,
+          677.0
+        ]
+      },
+      "after": {
+        "bbox_width_range": [
+          360,
+          362
+        ],
+        "bbox_height_range": [
+          540,
+          542
+        ],
+        "area_ratio": 1.062,
+        "lum_range": [
+          145.8,
+          146.79
+        ],
+        "alpha_range": [
+          248.52,
+          249.51
+        ],
+        "anchor_x_range": [
+          383.52,
+          384.44
+        ],
+        "bottom_range": [
+          676.0,
+          677.0
+        ]
+      }
+    },
+    "GardenVisitorSolWalkSmooth": {
+      "before": {
+        "bbox_width_range": [
+          396,
+          398
+        ],
+        "bbox_height_range": [
+          540,
+          542
+        ],
+        "area_ratio": 1.076,
+        "lum_range": [
+          139.29,
+          142.03
+        ],
+        "alpha_range": [
+          240.32,
+          251.19
+        ],
+        "anchor_x_range": [
+          358.37,
+          369.32
+        ],
+        "bottom_range": [
+          676.0,
+          677.0
+        ]
+      },
+      "after": {
+        "bbox_width_range": [
+          396,
+          398
+        ],
+        "bbox_height_range": [
+          540,
+          542
+        ],
+        "area_ratio": 1.076,
+        "lum_range": [
+          146.04,
+          146.26
+        ],
+        "alpha_range": [
+          240.88,
+          249.48
+        ],
+        "anchor_x_range": [
+          383.35,
+          384.53
+        ],
+        "bottom_range": [
+          677.0,
+          677.0
+        ]
+      }
+    },
+    "GardenVisitorSolOfferSmooth": {
+      "before": {
+        "bbox_width_range": [
+          443,
+          445
+        ],
+        "bbox_height_range": [
+          541,
+          542
+        ],
+        "area_ratio": 1.162,
+        "lum_range": [
+          146.07,
+          152.61
+        ],
+        "alpha_range": [
+          220.49,
+          251.19
+        ],
+        "anchor_x_range": [
+          308.85,
+          376.54
+        ],
+        "bottom_range": [
+          677.0,
+          677.0
+        ]
+      },
+      "after": {
+        "bbox_width_range": [
+          443,
+          445
+        ],
+        "bbox_height_range": [
+          541,
+          542
+        ],
+        "area_ratio": 1.162,
+        "lum_range": [
+          145.45,
+          146.36
+        ],
+        "alpha_range": [
+          224.02,
+          249.41
+        ],
+        "anchor_x_range": [
+          383.5,
+          385.39
+        ],
+        "bottom_range": [
+          677.0,
+          677.0
+        ]
+      }
+    },
+    "GardenVisitorMiraIdleSmooth": {
+      "before": {
+        "bbox_width_range": [
+          294,
+          296
+        ],
+        "bbox_height_range": [
+          530,
+          531
+        ],
+        "area_ratio": 1.122,
+        "lum_range": [
+          157.71,
+          159.69
+        ],
+        "alpha_range": [
+          245.62,
+          251.63
+        ],
+        "anchor_x_range": [
+          364.62,
+          374.08
+        ],
+        "bottom_range": [
+          676.0,
+          677.0
+        ]
+      },
+      "after": {
+        "bbox_width_range": [
+          294,
+          296
+        ],
+        "bbox_height_range": [
+          530,
+          531
+        ],
+        "area_ratio": 1.122,
+        "lum_range": [
+          157.48,
+          158.44
+        ],
+        "alpha_range": [
+          245.68,
+          248.43
+        ],
+        "anchor_x_range": [
+          383.52,
+          384.46
+        ],
+        "bottom_range": [
+          677.0,
+          677.0
+        ]
+      }
+    },
+    "GardenVisitorMiraWalkSmooth": {
+      "before": {
+        "bbox_width_range": [
+          327,
+          329
+        ],
+        "bbox_height_range": [
+          529,
+          531
+        ],
+        "area_ratio": 1.081,
+        "lum_range": [
+          158.11,
+          160.6
+        ],
+        "alpha_range": [
+          243.58,
+          250.98
+        ],
+        "anchor_x_range": [
+          356.92,
+          367.52
+        ],
+        "bottom_range": [
+          676.0,
+          677.0
+        ]
+      },
+      "after": {
+        "bbox_width_range": [
+          327,
+          329
+        ],
+        "bbox_height_range": [
+          529,
+          531
+        ],
+        "area_ratio": 1.081,
+        "lum_range": [
+          157.51,
+          158.35
+        ],
+        "alpha_range": [
+          243.94,
+          248.39
+        ],
+        "anchor_x_range": [
+          383.52,
+          384.49
+        ],
+        "bottom_range": [
+          677.0,
+          677.0
+        ]
+      }
+    },
+    "GardenVisitorMiraOfferSmooth": {
+      "before": {
+        "bbox_width_range": [
+          354,
+          356
+        ],
+        "bbox_height_range": [
+          530,
+          531
+        ],
+        "area_ratio": 1.548,
+        "lum_range": [
+          151.37,
+          153.92
+        ],
+        "alpha_range": [
+          235.67,
+          251.27
+        ],
+        "anchor_x_range": [
+          377.34,
+          382.97
+        ],
+        "bottom_range": [
+          676.0,
+          677.0
+        ]
+      },
+      "after": {
+        "bbox_width_range": [
+          354,
+          356
+        ],
+        "bbox_height_range": [
+          530,
+          531
+        ],
+        "area_ratio": 1.549,
+        "lum_range": [
+          157.78,
+          157.93
+        ],
+        "alpha_range": [
+          246.73,
+          248.43
+        ],
+        "anchor_x_range": [
+          383.51,
+          384.47
+        ],
+        "bottom_range": [
+          677.0,
+          677.0
+        ]
+      }
+    },
+    "GardenVisitorNoriIdleSmooth": {
+      "before": {
+        "bbox_width_range": [
+          285,
+          286
+        ],
+        "bbox_height_range": [
+          533,
+          535
+        ],
+        "area_ratio": 1.037,
+        "lum_range": [
+          127.64,
+          131.23
+        ],
+        "alpha_range": [
+          247.15,
+          250.72
+        ],
+        "anchor_x_range": [
+          376.96,
+          385.61
+        ],
+        "bottom_range": [
+          676.0,
+          677.0
+        ]
+      },
+      "after": {
+        "bbox_width_range": [
+          285,
+          286
+        ],
+        "bbox_height_range": [
+          533,
+          535
+        ],
+        "area_ratio": 1.037,
+        "lum_range": [
+          128.05,
+          128.42
+        ],
+        "alpha_range": [
+          247.08,
+          247.92
+        ],
+        "anchor_x_range": [
+          383.5,
+          384.44
+        ],
+        "bottom_range": [
+          677.0,
+          677.0
+        ]
+      }
+    },
+    "GardenVisitorNoriWalkSmooth": {
+      "before": {
+        "bbox_width_range": [
+          292,
+          295
+        ],
+        "bbox_height_range": [
+          531,
+          533
+        ],
+        "area_ratio": 1.116,
+        "lum_range": [
+          127.69,
+          129.1
+        ],
+        "alpha_range": [
+          236.12,
+          249.24
+        ],
+        "anchor_x_range": [
+          375.66,
+          383.45
+        ],
+        "bottom_range": [
+          676.0,
+          677.0
+        ]
+      },
+      "after": {
+        "bbox_width_range": [
+          292,
+          295
+        ],
+        "bbox_height_range": [
+          531,
+          533
+        ],
+        "area_ratio": 1.116,
+        "lum_range": [
+          127.63,
+          128.62
+        ],
+        "alpha_range": [
+          237.13,
+          247.94
+        ],
+        "anchor_x_range": [
+          383.51,
+          384.68
+        ],
+        "bottom_range": [
+          677.0,
+          677.0
+        ]
+      }
+    },
+    "GardenVisitorNoriOfferSmooth": {
+      "before": {
+        "bbox_width_range": [
+          331,
+          333
+        ],
+        "bbox_height_range": [
+          533,
+          535
+        ],
+        "area_ratio": 1.243,
+        "lum_range": [
+          126.69,
+          132.64
+        ],
+        "alpha_range": [
+          233.35,
+          250.39
+        ],
+        "anchor_x_range": [
+          378.84,
+          388.27
+        ],
+        "bottom_range": [
+          676.0,
+          677.0
+        ]
+      },
+      "after": {
+        "bbox_width_range": [
+          331,
+          333
+        ],
+        "bbox_height_range": [
+          533,
+          535
+        ],
+        "area_ratio": 1.244,
+        "lum_range": [
+          127.66,
+          128.55
+        ],
+        "alpha_range": [
+          234.15,
+          248.0
+        ],
+        "anchor_x_range": [
+          383.52,
+          384.47
+        ],
+        "bottom_range": [
+          677.0,
+          678.0
+        ]
+      }
+    },
+    "GardenKeeperWalkSmooth": {
+      "before": {
+        "bbox_width_range": [
+          370,
+          372
+        ],
+        "bbox_height_range": [
+          529,
+          531
+        ],
+        "area_ratio": 1.087,
+        "lum_range": [
+          123.45,
+          125.8
+        ],
+        "alpha_range": [
+          245.22,
+          251.39
+        ],
+        "anchor_x_range": [
+          356.0,
+          368.15
+        ],
+        "bottom_range": [
+          676.0,
+          677.0
+        ]
+      },
+      "after": {
+        "bbox_width_range": [
+          370,
+          372
+        ],
+        "bbox_height_range": [
+          529,
+          531
+        ],
+        "area_ratio": 1.087,
+        "lum_range": [
+          121.81,
+          121.93
+        ],
+        "alpha_range": [
+          245.49,
+          249.04
+        ],
+        "anchor_x_range": [
+          383.55,
+          384.49
+        ],
+        "bottom_range": [
+          677.0,
+          677.0
+        ]
+      }
+    },
+    "GardenKeeperInspectSmoothFull": {
+      "before": {
+        "bbox_width_range": [
+          419,
+          421
+        ],
+        "bbox_height_range": [
+          430,
+          431
+        ],
+        "area_ratio": 1.273,
+        "lum_range": [
+          120.62,
+          124.98
+        ],
+        "alpha_range": [
+          240.79,
+          251.63
+        ],
+        "anchor_x_range": [
+          296.16,
+          362.46
+        ],
+        "bottom_range": [
+          676.0,
+          677.0
+        ]
+      },
+      "after": {
+        "bbox_width_range": [
+          419,
+          421
+        ],
+        "bbox_height_range": [
+          430,
+          431
+        ],
+        "area_ratio": 1.273,
+        "lum_range": [
+          121.4,
+          122.31
+        ],
+        "alpha_range": [
+          245.21,
+          249.09
+        ],
+        "anchor_x_range": [
+          383.53,
+          384.49
+        ],
+        "bottom_range": [
+          677.0,
+          677.0
+        ]
+      }
+    },
+    "GardenKeeperPlaceSmoothFull": {
+      "before": {
+        "bbox_width_range": [
+          395,
+          397
+        ],
+        "bbox_height_range": [
+          449,
+          451
+        ],
+        "area_ratio": 1.32,
+        "lum_range": [
+          116.17,
+          123.35
+        ],
+        "alpha_range": [
+          204.25,
+          251.63
+        ],
+        "anchor_x_range": [
+          303.98,
+          373.39
+        ],
+        "bottom_range": [
+          676.0,
+          677.0
+        ]
+      },
+      "after": {
+        "bbox_width_range": [
+          395,
+          397
+        ],
+        "bbox_height_range": [
+          449,
+          451
+        ],
+        "area_ratio": 1.32,
+        "lum_range": [
+          120.34,
+          122.19
+        ],
+        "alpha_range": [
+          209.28,
+          249.1
+        ],
+        "anchor_x_range": [
+          383.23,
+          384.5
+        ],
+        "bottom_range": [
+          677.0,
+          677.0
+        ]
+      }
+    }
+  }
+}

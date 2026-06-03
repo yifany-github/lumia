@@ -1,0 +1,100 @@
+{
+  "asset": "GardenWorldSpringDay.png",
+  "size": {
+    "width": 1290,
+    "height": 2796
+  },
+  "coordinateSystem": "normalized top-left origin",
+  "anchors": [
+    {
+      "id": "statusQuietZone",
+      "title": "Status quiet zone",
+      "x": 0.5,
+      "y": 0.06,
+      "width": 0.86,
+      "height": 0.1,
+      "depthBand": "ui-safe",
+      "purpose": "Low-detail upper area behind iOS status bar."
+    },
+    {
+      "id": "topCanopy",
+      "title": "Top canopy",
+      "x": 0.5,
+      "y": 0.14,
+      "width": 0.86,
+      "height": 0.16,
+      "depthBand": "far",
+      "purpose": "Sun shafts, rain origin, pollen, falling leaves."
+    },
+    {
+      "id": "upperDepthPath",
+      "title": "Upper depth path",
+      "x": 0.52,
+      "y": 0.28,
+      "width": 0.24,
+      "height": 0.07,
+      "depthBand": "far",
+      "purpose": "Depth and future seasonal signals; no tap targets."
+    },
+    {
+      "id": "rightLanternGlade",
+      "title": "Right lantern glade",
+      "x": 0.7,
+      "y": 0.4,
+      "width": 0.25,
+      "height": 0.085,
+      "depthBand": "mid",
+      "purpose": "Lantern, wind chime, Sol visitor, warm light interactions."
+    },
+    {
+      "id": "leftMidStonePad",
+      "title": "Left mid stone pad",
+      "x": 0.28,
+      "y": 0.44,
+      "width": 0.25,
+      "height": 0.085,
+      "depthBand": "mid",
+      "purpose": "Carved stone, root charm, small long-term trace objects."
+    },
+    {
+      "id": "leftVisitorNook",
+      "title": "Left visitor nook",
+      "x": 0.22,
+      "y": 0.58,
+      "width": 0.27,
+      "height": 0.09,
+      "depthBand": "near",
+      "purpose": "Visitor arrival, small traces, gentle gift placement."
+    },
+    {
+      "id": "rightWaterEdge",
+      "title": "Right water edge",
+      "x": 0.68,
+      "y": 0.58,
+      "width": 0.27,
+      "height": 0.09,
+      "depthBand": "near",
+      "purpose": "Quiet bowl, letter, dew, water-adjacent reflection."
+    },
+    {
+      "id": "foregroundPath",
+      "title": "Foreground path",
+      "x": 0.5,
+      "y": 0.79,
+      "width": 0.32,
+      "height": 0.15,
+      "depthBand": "foreground",
+      "purpose": "Keeper walking, entrance, quiet return."
+    },
+    {
+      "id": "tabSafeDarkZone",
+      "title": "Tab safe dark zone",
+      "x": 0.5,
+      "y": 0.93,
+      "width": 0.92,
+      "height": 0.13,
+      "depthBand": "ui-safe",
+      "purpose": "Low-detail dark area behind bottom tab bar."
+    }
+  ]
+}

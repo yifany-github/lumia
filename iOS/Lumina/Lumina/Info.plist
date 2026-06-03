@@ -20,6 +20,10 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -31,16 +35,14 @@
 			</array>
 		</dict>
 	</array>
-	<key>NSHealthShareUsageDescription</key>
-	<string>Lumia reads daily sleep, activity, and heart-rate summaries to personalize gentle check-ins. It stores only aggregated daily values, not raw samples.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Lumia uses Face ID to protect your private reflections and conversations when Privacy Lock is enabled.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Lumia uses the microphone to turn your spoken check-ins into text before you send them.</string>
+	<string>Lumia uses the microphone for live therapy calls and to turn spoken check-ins into text before you send them.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Lumia uses the camera for optional video therapy sessions.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Lumia uses speech recognition to transcribe your voice into the chat input.</string>
+	<string>Lumia uses speech recognition to transcribe your voice into chat and journal inputs.</string>
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UISupportedInterfaceOrientations</key>

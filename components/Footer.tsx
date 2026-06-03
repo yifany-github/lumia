@@ -33,7 +33,7 @@ const Footer: React.FC = () => {
         <div>
           <h4 className="font-serif font-bold text-lg mb-6 text-primary">Legal</h4>
           <ul className="space-y-3 text-sm text-background/60 dark:text-muted-foreground">
-            <li><a href="#" className="hover:text-background dark:hover:text-foreground transition-colors">Privacy Policy</a></li>
+            <li><a href="/privacy.html" className="hover:text-background dark:hover:text-foreground transition-colors">Privacy Policy</a></li>
             <li><a href="#" className="hover:text-background dark:hover:text-foreground transition-colors">Terms of Service</a></li>
             <li><a href="#" className="hover:text-background dark:hover:text-foreground transition-colors">AI Ethics</a></li>
           </ul>

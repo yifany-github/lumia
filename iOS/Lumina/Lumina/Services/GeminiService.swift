@@ -343,24 +343,126 @@ enum GeminiServiceError: LocalizedError {
         case .notSignedIn:
             return "Sign in to use Lumia AI."
         case .backendUnavailable:
-            return "Lumia AI is not deployed yet. Deploy the Firebase aiGateway function, then try again."
+            return "Lumia AI is unavailable right now. Try again in a moment."
         case .backendPermissionMissing:
-            return "Lumia AI is deployed but not callable yet. Redeploy aiGateway with public invoker access."
+            return "Lumia AI is unavailable right now. Try again in a moment."
         case .emptyResponse:
             return "Lumia AI returned an empty response. Try again in a moment."
         case .invalidResponse:
             return "Lumia AI returned a response the app could not read."
         case .gatewayError(let statusCode, let message):
-            return "Lumia AI request failed (\(statusCode)): \(message)"
+            let lowercasedMessage = message.lowercased()
+            if statusCode == 402 ||
+                lowercasedMessage.contains("premium_required") ||
+                lowercasedMessage.contains("plus is required") ||
+                lowercasedMessage.contains("lumia plus") {
+                return "This is included with Lumia Plus. You can keep using the free features today."
+            }
+            if statusCode == 429 ||
+                lowercasedMessage.contains("quota") ||
+                lowercasedMessage.contains("free ai replies") ||
+                lowercasedMessage.contains("voice time") {
+                if lowercasedMessage.contains("voice") {
+                    return "Your voice time is used for this period. Text chat is still available."
+                }
+                return "Today's free AI replies are used. You can continue tomorrow or upgrade for longer support."
+            }
+            if statusCode == 429 {
+                return "Lumia AI is busy right now. Try again in a moment."
+            }
+            if statusCode == 401 || statusCode == 403 {
+                return "Lumia AI needs you to sign in again."
+            }
+            return "Lumia AI could not complete this request. Try again in a moment. Code \(statusCode)."
         }
     }
 }
 
 class GeminiService {
     static let shared = GeminiService()
+    static let networkUnavailableMessage = "You're offline. AI replies, calls, and sync need a connection."
     private let fallbackProjectID = "lumia-cd3d2"
     private var cachedRuntimeConfig: LuminaAIRuntimeConfig?
     private var cachedRuntimeConfigDate: Date?
+
+    static func userFacingMessage(for error: Error, fallback: String = "Lumia AI could not complete this request. Try again in a moment.") -> String {
+        if let serviceError = error as? GeminiServiceError {
+            return serviceError.localizedDescription
+        }
+
+        if isNetworkUnavailable(error) {
+            return networkUnavailableMessage
+        }
+
+        let raw = error.localizedDescription
+        if raw.localizedCaseInsensitiveContains("network") ||
+            raw.localizedCaseInsensitiveContains("timed out") {
+            return "The connection was interrupted. Check your network and try again."
+        }
+        if raw.localizedCaseInsensitiveContains("permission") ||
+            raw.localizedCaseInsensitiveContains("unauthorized") ||
+            raw.localizedCaseInsensitiveContains("401") ||
+            raw.localizedCaseInsensitiveContains("403") {
+            return "Lumia AI needs you to sign in again."
+        }
+        if raw.localizedCaseInsensitiveContains("premium_required") ||
+            raw.localizedCaseInsensitiveContains("plus is required") ||
+            raw.localizedCaseInsensitiveContains("lumia plus") {
+            return "This is included with Lumia Plus. You can keep using the free features today."
+        }
+        if raw.localizedCaseInsensitiveContains("free ai replies") {
+            return "Today's free AI replies are used. You can continue tomorrow or upgrade for longer support."
+        }
+        if raw.localizedCaseInsensitiveContains("voice time") {
+            return "Your voice time is used for this period. Text chat is still available."
+        }
+        if raw.localizedCaseInsensitiveContains("quota") ||
+            raw.localizedCaseInsensitiveContains("rate") ||
+            raw.localizedCaseInsensitiveContains("429") {
+            return "Lumia AI is busy right now. Try again in a moment."
+        }
+        return fallback
+    }
+
+    static func isNetworkUnavailable(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        let offlineCodes: Set<Int> = [
+            URLError.Code.notConnectedToInternet.rawValue,
+            URLError.Code.networkConnectionLost.rawValue,
+            URLError.Code.cannotConnectToHost.rawValue,
+            URLError.Code.cannotFindHost.rawValue,
+            URLError.Code.dnsLookupFailed.rawValue,
+            URLError.Code.timedOut.rawValue
+        ]
+
+        if nsError.domain == NSURLErrorDomain, offlineCodes.contains(nsError.code) {
+            return true
+        }
+
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? Error,
+           isNetworkUnavailable(underlying) {
+            return true
+        }
+
+        let raw = ([nsError.localizedDescription] + nsError.userInfo.values.map { "\($0)" })
+            .joined(separator: " ")
+            .lowercased()
+        let needles = [
+            "not connected to the internet",
+            "internet connection appears to be offline",
+            "offline",
+            "network connection was lost",
+            "network is unreachable",
+            "cannot connect to the server",
+            "cannot connect to host",
+            "dns lookup failed",
+            "nsurlerrordomain code=-1009",
+            "nsurlerrordomain code=-1005",
+            "nsurlerrordomain code=-1004",
+            "nsurlerrordomain code=-1003"
+        ]
+        return needles.contains { raw.contains($0) }
+    }
     
     // MARK: - Generate text content
     func generateContent(
@@ -398,7 +500,7 @@ class GeminiService {
             where statusCode == 400 && message.localizedCaseInsensitiveContains("runtimeConfig") {
             let config = LuminaAIRuntimeConfig(
                 textModel: "gemini-3-flash-preview",
-                liveModel: "gemini-2.5-flash-native-audio-preview-12-2025",
+                liveModel: "gemini-3.1-flash-live-preview",
                 promptVersion: "local-runtime-fallback"
             )
             cachedRuntimeConfig = config
@@ -419,6 +521,15 @@ class GeminiService {
         cachedRuntimeConfig = config
         cachedRuntimeConfigDate = Date()
         return config
+    }
+
+    func startLiveCall() async throws {
+        _ = try await callGateway(feature: "startLiveCall", payload: [:])
+    }
+
+    func recordVoiceUsage(seconds: Int) async throws {
+        guard seconds > 0 else { return }
+        _ = try await callGateway(feature: "recordVoiceUsage", payload: ["seconds": seconds])
     }
     
     // MARK: - Analyze Journal Entry
@@ -568,9 +679,11 @@ class GeminiService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 45
+        var enrichedPayload = payload
+        enrichedPayload["clientTimeZone"] = TimeZone.current.identifier
         request.httpBody = try JSONSerialization.data(withJSONObject: [
             "feature": feature,
-            "payload": payload
+            "payload": enrichedPayload
         ])
 
         let (data, response) = try await URLSession.shared.data(for: request)

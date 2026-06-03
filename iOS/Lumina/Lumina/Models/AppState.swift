@@ -1,7 +1,7 @@
 import Foundation
 import Combine
 import CryptoKit
-import HealthKit
+import Network
 import UserNotifications
 import FirebaseAuth
 import FirebaseCore
@@ -16,10 +16,10 @@ struct PersistedGardenState: Codable {
     var habits: [Habit] = []
     var waterDrops: Int = 0
     var gardenDecorations: [GardenDecoration] = []
-    var claimedGardenQuestIDs: Set<String> = []
+    var keptGardenPromptIDs: Set<String> = []
     var therapyMicroPlans: [MicroPlan] = []
     var forageItems: [GardenForageItem] = []
-    var dailyEvents: [GardenDailyEvent] = []
+    var visitorInvitations: [GardenVisitorInvitation] = []
     var keepsakes: [GardenKeepsake] = []
     var unlockedAreas: [GardenMapAreaUnlock] = []
     var areaVisits: [GardenMapAreaVisit] = []
@@ -29,9 +29,11 @@ struct PersistedGardenState: Codable {
         case habits
         case waterDrops
         case gardenDecorations
+        case keptGardenPromptIDs
         case claimedGardenQuestIDs
         case therapyMicroPlans
         case forageItems
+        case visitorInvitations
         case dailyEvents
         case keepsakes
         case unlockedAreas
@@ -43,10 +45,10 @@ struct PersistedGardenState: Codable {
         habits: [Habit] = [],
         waterDrops: Int = 0,
         gardenDecorations: [GardenDecoration] = [],
-        claimedGardenQuestIDs: Set<String> = [],
+        keptGardenPromptIDs: Set<String> = [],
         therapyMicroPlans: [MicroPlan] = [],
         forageItems: [GardenForageItem] = [],
-        dailyEvents: [GardenDailyEvent] = [],
+        visitorInvitations: [GardenVisitorInvitation] = [],
         keepsakes: [GardenKeepsake] = [],
         unlockedAreas: [GardenMapAreaUnlock] = [],
         areaVisits: [GardenMapAreaVisit] = [],
@@ -55,10 +57,10 @@ struct PersistedGardenState: Codable {
         self.habits = habits
         self.waterDrops = waterDrops
         self.gardenDecorations = gardenDecorations
-        self.claimedGardenQuestIDs = claimedGardenQuestIDs
+        self.keptGardenPromptIDs = keptGardenPromptIDs
         self.therapyMicroPlans = therapyMicroPlans
         self.forageItems = forageItems
-        self.dailyEvents = dailyEvents
+        self.visitorInvitations = visitorInvitations
         self.keepsakes = keepsakes
         self.unlockedAreas = unlockedAreas
         self.areaVisits = areaVisits
@@ -70,14 +72,33 @@ struct PersistedGardenState: Codable {
         habits = try container.decodeIfPresent([Habit].self, forKey: .habits) ?? []
         waterDrops = try container.decodeIfPresent(Int.self, forKey: .waterDrops) ?? 0
         gardenDecorations = try container.decodeIfPresent([GardenDecoration].self, forKey: .gardenDecorations) ?? []
-        claimedGardenQuestIDs = try container.decodeIfPresent(Set<String>.self, forKey: .claimedGardenQuestIDs) ?? []
+        keptGardenPromptIDs = try container.decodeIfPresent(Set<String>.self, forKey: .keptGardenPromptIDs)
+            ?? container.decodeIfPresent(Set<String>.self, forKey: .claimedGardenQuestIDs)
+            ?? []
         therapyMicroPlans = try container.decodeIfPresent([MicroPlan].self, forKey: .therapyMicroPlans) ?? []
         forageItems = try container.decodeIfPresent([GardenForageItem].self, forKey: .forageItems) ?? []
-        dailyEvents = try container.decodeIfPresent([GardenDailyEvent].self, forKey: .dailyEvents) ?? []
+        visitorInvitations = try container.decodeIfPresent([GardenVisitorInvitation].self, forKey: .visitorInvitations)
+            ?? container.decodeIfPresent([GardenVisitorInvitation].self, forKey: .dailyEvents)
+            ?? []
         keepsakes = try container.decodeIfPresent([GardenKeepsake].self, forKey: .keepsakes) ?? []
         unlockedAreas = try container.decodeIfPresent([GardenMapAreaUnlock].self, forKey: .unlockedAreas) ?? []
         areaVisits = try container.decodeIfPresent([GardenMapAreaVisit].self, forKey: .areaVisits) ?? []
         areaMilestones = try container.decodeIfPresent([GardenAreaMilestoneUnlock].self, forKey: .areaMilestones) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(habits, forKey: .habits)
+        try container.encode(waterDrops, forKey: .waterDrops)
+        try container.encode(gardenDecorations, forKey: .gardenDecorations)
+        try container.encode(keptGardenPromptIDs, forKey: .keptGardenPromptIDs)
+        try container.encode(therapyMicroPlans, forKey: .therapyMicroPlans)
+        try container.encode(forageItems, forKey: .forageItems)
+        try container.encode(visitorInvitations, forKey: .visitorInvitations)
+        try container.encode(keepsakes, forKey: .keepsakes)
+        try container.encode(unlockedAreas, forKey: .unlockedAreas)
+        try container.encode(areaVisits, forKey: .areaVisits)
+        try container.encode(areaMilestones, forKey: .areaMilestones)
     }
 }
 
@@ -285,8 +306,145 @@ struct SubscriptionState: Codable, Equatable {
     }
 }
 
+struct SubscriptionUsageState: Codable, Equatable {
+    static let freeAIChatDailyLimit = 20
+    static let freeVoiceDailyLimitSeconds = 5 * 60
+    static let premiumVoiceMonthlyLimitSeconds = 300 * 60
+
+    var dailyKey: String = Self.dayKey()
+    var monthlyKey: String = Self.monthKey()
+    var aiChatRepliesToday: Int = 0
+    var liveCallSecondsToday: Int = 0
+    var liveCallSecondsThisMonth: Int = 0
+
+    mutating func normalize(now: Date = Date()) {
+        let currentDay = Self.dayKey(for: now)
+        if dailyKey != currentDay {
+            dailyKey = currentDay
+            aiChatRepliesToday = 0
+            liveCallSecondsToday = 0
+        }
+
+        let currentMonth = Self.monthKey(for: now)
+        if monthlyKey != currentMonth {
+            monthlyKey = currentMonth
+            liveCallSecondsThisMonth = 0
+        }
+    }
+
+    mutating func recordAIChatReply() {
+        normalize()
+        aiChatRepliesToday += 1
+    }
+
+    mutating func recordLiveCall(seconds: Int) {
+        normalize()
+        let clamped = max(0, seconds)
+        liveCallSecondsToday += clamped
+        liveCallSecondsThisMonth += clamped
+    }
+
+    static func dayKey(for date: Date = Date()) -> String {
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        return "\(components.year ?? 0)-\(components.month ?? 0)-\(components.day ?? 0)"
+    }
+
+    static func monthKey(for date: Date = Date()) -> String {
+        let components = Calendar.current.dateComponents([.year, .month], from: date)
+        return "\(components.year ?? 0)-\(components.month ?? 0)"
+    }
+}
+
+struct SubscriptionAllowance: Equatable {
+    let hasPremiumAccess: Bool
+    let aiChatRepliesToday: Int
+    let liveCallSecondsToday: Int
+    let liveCallSecondsThisMonth: Int
+
+    var aiChatDailyLimit: Int? {
+        hasPremiumAccess ? nil : SubscriptionUsageState.freeAIChatDailyLimit
+    }
+
+    var voiceLimitSeconds: Int {
+        hasPremiumAccess
+            ? SubscriptionUsageState.premiumVoiceMonthlyLimitSeconds
+            : SubscriptionUsageState.freeVoiceDailyLimitSeconds
+    }
+
+    var voiceUsedSeconds: Int {
+        hasPremiumAccess ? liveCallSecondsThisMonth : liveCallSecondsToday
+    }
+
+    var aiChatRemainingToday: Int? {
+        guard let aiChatDailyLimit else { return nil }
+        return max(0, aiChatDailyLimit - aiChatRepliesToday)
+    }
+
+    var voiceRemainingSeconds: Int {
+        max(0, voiceLimitSeconds - voiceUsedSeconds)
+    }
+
+    var canUseAIChat: Bool {
+        aiChatRemainingToday.map { $0 > 0 } ?? true
+    }
+
+    var canStartLiveCall: Bool {
+        voiceRemainingSeconds > 0
+    }
+
+    var aiUsageText: String {
+        if let aiChatDailyLimit {
+            return "\(aiChatRemainingToday ?? 0)/\(aiChatDailyLimit) replies left today"
+        }
+        return "Expanded replies"
+    }
+
+    var voiceUsageText: String {
+        "\(Self.minutesText(voiceRemainingSeconds)) left"
+    }
+
+    var voiceLimitText: String {
+        hasPremiumAccess ? "300 min/month" : "5 min/day"
+    }
+
+    var headline: String {
+        hasPremiumAccess ? "Plus continuity is on" : "Free plan today"
+    }
+
+    var detail: String {
+        hasPremiumAccess
+            ? "Voice time: \(voiceUsageText). Memory and deeper insights are available."
+            : "\(aiUsageText). Voice preview: \(voiceUsageText)."
+    }
+
+    private static func minutesText(_ seconds: Int) -> String {
+        let minutes = Int(ceil(Double(max(0, seconds)) / 60.0))
+        return "\(minutes) min"
+    }
+}
+
 struct PersistedSubscriptionState: Codable {
     var subscription: SubscriptionState = SubscriptionState()
+    var usage: SubscriptionUsageState = SubscriptionUsageState()
+
+    enum CodingKeys: String, CodingKey {
+        case subscription
+        case usage
+    }
+
+    init(
+        subscription: SubscriptionState = SubscriptionState(),
+        usage: SubscriptionUsageState = SubscriptionUsageState()
+    ) {
+        self.subscription = subscription
+        self.usage = usage
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        subscription = try container.decodeIfPresent(SubscriptionState.self, forKey: .subscription) ?? SubscriptionState()
+        usage = try container.decodeIfPresent(SubscriptionUsageState.self, forKey: .usage) ?? SubscriptionUsageState()
+    }
 }
 
 enum LuminaAuthError: LocalizedError {
@@ -324,9 +482,72 @@ enum LuminaAuthError: LocalizedError {
     }
 }
 
+enum ProfileAvatarID: String, CaseIterable, Codable, Identifiable {
+    case cat
+    case rabbit
+    case dog
+    case hamster
+
+    var id: String { rawValue }
+
+    static func fromPersistedValue(_ value: String?) -> ProfileAvatarID {
+        guard let value, let avatar = ProfileAvatarID(rawValue: value) else {
+            return .cat
+        }
+        return avatar
+    }
+
+    var title: String {
+        switch self {
+        case .cat: return "Cat"
+        case .rabbit: return "Rabbit"
+        case .dog: return "Dog"
+        case .hamster: return "Hamster"
+        }
+    }
+
+    var assetName: String {
+        switch self {
+        case .cat: return "ProfileAvatarCat"
+        case .rabbit: return "ProfileAvatarRabbit"
+        case .dog: return "ProfileAvatarDog"
+        case .hamster: return "ProfileAvatarHamster"
+        }
+    }
+}
+
+enum ProfileGender: String, CaseIterable, Codable, Identifiable {
+    case notSpecified
+    case woman
+    case man
+    case nonBinary
+    case preferNotToSay
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .notSpecified: return "Not specified"
+        case .woman: return "Woman"
+        case .man: return "Man"
+        case .nonBinary: return "Non-binary"
+        case .preferNotToSay: return "Prefer not to say"
+        }
+    }
+
+    var profileDetail: String {
+        switch self {
+        case .notSpecified: return "Not set"
+        case .woman, .man, .nonBinary, .preferNotToSay: return title
+        }
+    }
+}
+
 struct PersistedProfileState: Codable {
     var userName: String = "User"
     var userBio: String = ""
+    var avatarID: ProfileAvatarID = .cat
+    var gender: ProfileGender = .notSpecified
     var joinDate: Date = Date()
     var dailyReminderEnabled: Bool = false
     var dailyReminderHour: Int = 9
@@ -336,10 +557,83 @@ struct PersistedProfileState: Codable {
     var useJournalContextInTherapy: Bool = true
     var journalGoalPerWeek: Int = 3
     var meditationGoalMinutes: Int = 10
+
+    enum CodingKeys: String, CodingKey {
+        case userName
+        case userBio
+        case avatarID
+        case gender
+        case joinDate
+        case dailyReminderEnabled
+        case dailyReminderHour
+        case hapticFeedbackEnabled
+        case useLargeText
+        case requireBiometrics
+        case useJournalContextInTherapy
+        case journalGoalPerWeek
+        case meditationGoalMinutes
+    }
+
+    init(
+        userName: String = "User",
+        userBio: String = "",
+        avatarID: ProfileAvatarID = .cat,
+        gender: ProfileGender = .notSpecified,
+        joinDate: Date = Date(),
+        dailyReminderEnabled: Bool = false,
+        dailyReminderHour: Int = 9,
+        hapticFeedbackEnabled: Bool = true,
+        useLargeText: Bool = false,
+        requireBiometrics: Bool = false,
+        useJournalContextInTherapy: Bool = true,
+        journalGoalPerWeek: Int = 3,
+        meditationGoalMinutes: Int = 10
+    ) {
+        self.userName = userName
+        self.userBio = userBio
+        self.avatarID = avatarID
+        self.gender = gender
+        self.joinDate = joinDate
+        self.dailyReminderEnabled = dailyReminderEnabled
+        self.dailyReminderHour = dailyReminderHour
+        self.hapticFeedbackEnabled = hapticFeedbackEnabled
+        self.useLargeText = useLargeText
+        self.requireBiometrics = requireBiometrics
+        self.useJournalContextInTherapy = useJournalContextInTherapy
+        self.journalGoalPerWeek = journalGoalPerWeek
+        self.meditationGoalMinutes = meditationGoalMinutes
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        userName = try container.decodeIfPresent(String.self, forKey: .userName) ?? "User"
+        userBio = try container.decodeIfPresent(String.self, forKey: .userBio) ?? ""
+        avatarID = ProfileAvatarID.fromPersistedValue(try container.decodeIfPresent(String.self, forKey: .avatarID))
+        gender = try container.decodeIfPresent(ProfileGender.self, forKey: .gender) ?? .notSpecified
+        joinDate = try container.decodeIfPresent(Date.self, forKey: .joinDate) ?? Date()
+        dailyReminderEnabled = try container.decodeIfPresent(Bool.self, forKey: .dailyReminderEnabled) ?? false
+        dailyReminderHour = try container.decodeIfPresent(Int.self, forKey: .dailyReminderHour) ?? 9
+        hapticFeedbackEnabled = try container.decodeIfPresent(Bool.self, forKey: .hapticFeedbackEnabled) ?? true
+        useLargeText = try container.decodeIfPresent(Bool.self, forKey: .useLargeText) ?? false
+        requireBiometrics = try container.decodeIfPresent(Bool.self, forKey: .requireBiometrics) ?? false
+        useJournalContextInTherapy = try container.decodeIfPresent(Bool.self, forKey: .useJournalContextInTherapy) ?? true
+        journalGoalPerWeek = try container.decodeIfPresent(Int.self, forKey: .journalGoalPerWeek) ?? 3
+        meditationGoalMinutes = try container.decodeIfPresent(Int.self, forKey: .meditationGoalMinutes) ?? 10
+    }
 }
 
 struct PersistedJournalInsightState: Codable {
     var dailyInsight: DailyJournalInsights?
+}
+
+struct TherapySessionDeletionTombstone: Codable, Identifiable, Equatable {
+    var id: String
+    var deletedAt: TimeInterval
+}
+
+struct JournalDeletionTombstone: Codable, Identifiable, Equatable {
+    var id: String
+    var deletedAt: TimeInterval
 }
 
 struct LuminaPersistedState: Codable {
@@ -348,7 +642,9 @@ struct LuminaPersistedState: Codable {
     var schemaVersion: Int = currentSchemaVersion
     var savedAt: TimeInterval = Date().timeIntervalSince1970
     var chatSessions: [String: ChatSession] = [:]
+    var therapySessionDeletionTombstones: [TherapySessionDeletionTombstone] = []
     var journalEntries: [JournalEntry] = []
+    var journalDeletionTombstones: [JournalDeletionTombstone] = []
     var garden: PersistedGardenState = PersistedGardenState()
     var followUps: [FollowUp] = []
     var health: PersistedHealthDataState = PersistedHealthDataState()
@@ -364,7 +660,9 @@ struct LuminaPersistedState: Codable {
         case schemaVersion
         case savedAt
         case chatSessions
+        case therapySessionDeletionTombstones
         case journalEntries
+        case journalDeletionTombstones
         case garden
         case followUps
         case health
@@ -381,7 +679,9 @@ struct LuminaPersistedState: Codable {
         schemaVersion: Int = currentSchemaVersion,
         savedAt: TimeInterval = Date().timeIntervalSince1970,
         chatSessions: [String: ChatSession] = [:],
+        therapySessionDeletionTombstones: [TherapySessionDeletionTombstone] = [],
         journalEntries: [JournalEntry] = [],
+        journalDeletionTombstones: [JournalDeletionTombstone] = [],
         garden: PersistedGardenState = PersistedGardenState(),
         followUps: [FollowUp] = [],
         health: PersistedHealthDataState = PersistedHealthDataState(),
@@ -396,7 +696,9 @@ struct LuminaPersistedState: Codable {
         self.schemaVersion = schemaVersion
         self.savedAt = savedAt
         self.chatSessions = chatSessions
+        self.therapySessionDeletionTombstones = therapySessionDeletionTombstones
         self.journalEntries = journalEntries
+        self.journalDeletionTombstones = journalDeletionTombstones
         self.garden = garden
         self.followUps = followUps
         self.health = health
@@ -414,7 +716,9 @@ struct LuminaPersistedState: Codable {
         schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? Self.currentSchemaVersion
         savedAt = try container.decodeIfPresent(TimeInterval.self, forKey: .savedAt) ?? Date().timeIntervalSince1970
         chatSessions = try container.decodeIfPresent([String: ChatSession].self, forKey: .chatSessions) ?? [:]
+        therapySessionDeletionTombstones = try container.decodeIfPresent([TherapySessionDeletionTombstone].self, forKey: .therapySessionDeletionTombstones) ?? []
         journalEntries = try container.decodeIfPresent([JournalEntry].self, forKey: .journalEntries) ?? []
+        journalDeletionTombstones = try container.decodeIfPresent([JournalDeletionTombstone].self, forKey: .journalDeletionTombstones) ?? []
         garden = try container.decodeIfPresent(PersistedGardenState.self, forKey: .garden) ?? PersistedGardenState()
         followUps = try container.decodeIfPresent([FollowUp].self, forKey: .followUps) ?? []
         health = try container.decodeIfPresent(PersistedHealthDataState.self, forKey: .health) ?? PersistedHealthDataState()
@@ -432,6 +736,7 @@ final class PersistenceService {
     private let fileManager: FileManager
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private let saveQueue = DispatchQueue(label: "lumina.persistence.save", qos: .utility)
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
@@ -452,6 +757,19 @@ final class PersistenceService {
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try encoder.encode(state)
         try data.write(to: stateURL, options: [.atomic])
+    }
+
+    func saveAsync(_ state: LuminaPersistedState, onError: @escaping (Error) -> Void) {
+        saveQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                try self.save(state)
+            } catch {
+                DispatchQueue.main.async {
+                    onError(error)
+                }
+            }
+        }
     }
 
     private var stateDirectory: URL {
@@ -728,18 +1046,41 @@ final class NotificationStore: ObservableObject {
 
 @MainActor
 final class ChatStore: ObservableObject {
-    @Published private(set) var chatSessions: [String: ChatSession] = [:]
+    private(set) var chatSessions: [String: ChatSession] = [:]
+    private(set) var deletionTombstones: [TherapySessionDeletionTombstone] = []
     private var chatSessionPublishScheduled = false
+    private static let tombstoneRetention: TimeInterval = 60 * 60 * 24 * 180
 
-    func restore(_ sessions: [String: ChatSession]) {
-        chatSessions = sessions
+    func restore(_ sessions: [String: ChatSession], deletionTombstones: [TherapySessionDeletionTombstone] = []) {
+        let tombstones = Self.prunedTombstones(deletionTombstones)
+        self.deletionTombstones = tombstones
+        let tombstoneMap = Self.tombstoneMap(from: tombstones)
+        chatSessions = sessions.filter { _, session in
+            !Self.isDeleted(session, tombstones: tombstoneMap)
+        }
         chatSessionPublishScheduled = false
+    }
+
+    func mergeCloudDeletions(_ remoteTombstones: [TherapySessionDeletionTombstone]) {
+        guard !remoteTombstones.isEmpty else { return }
+        deletionTombstones = Self.prunedTombstones(deletionTombstones + remoteTombstones)
+        let tombstoneMap = Self.tombstoneMap(from: deletionTombstones)
+        chatSessions = chatSessions.filter { _, session in
+            !Self.isDeleted(session, tombstones: tombstoneMap)
+        }
+        scheduleChatSessionPublishIfNeeded(.deferred)
     }
 
     func sessions(for therapist: Therapist) -> [ChatSession] {
         chatSessions.values
             .filter { ($0.therapistID == therapist.id || $0.id == therapist.id) && $0.archivedAt == nil }
             .sorted { $0.lastUpdated > $1.lastUpdated }
+    }
+
+    func sessionIDs(for therapist: Therapist) -> [String] {
+        chatSessions.values
+            .filter { $0.therapistID == therapist.id || $0.id == therapist.id }
+            .map(\.id)
     }
 
     func session(for therapist: Therapist) -> ChatSession? {
@@ -752,33 +1093,47 @@ final class ChatStore: ObservableObject {
 
     func saveSessions(_ sessions: [ChatSession], publish: ChatSessionPublishMode = .deferred) {
         guard !sessions.isEmpty else { return }
+        let tombstoneMap = Self.tombstoneMap(from: deletionTombstones)
+        let saveableSessions = sessions.filter { !Self.isDeleted($0, tombstones: tombstoneMap) }
+        guard !saveableSessions.isEmpty else { return }
         if publish == .immediate {
             objectWillChange.send()
         }
-        for session in sessions {
+        for session in saveableSessions {
+            clearTombstoneIfSessionIsNewer(session)
             chatSessions[session.id] = session
         }
         scheduleChatSessionPublishIfNeeded(publish)
     }
 
-    func clearSession(for therapist: Therapist, publish: ChatSessionPublishMode = .deferred) {
-        guard chatSessions.values.contains(where: { $0.therapistID == therapist.id || $0.id == therapist.id }) else { return }
+    @discardableResult
+    func clearSession(for therapist: Therapist, publish: ChatSessionPublishMode = .deferred) -> [TherapySessionDeletionTombstone] {
+        guard chatSessions.values.contains(where: { $0.therapistID == therapist.id || $0.id == therapist.id }) else { return [] }
+        let tombstones = chatSessions.values
+            .filter { $0.therapistID == therapist.id || $0.id == therapist.id }
+            .map { TherapySessionDeletionTombstone(id: $0.id, deletedAt: Date().timeIntervalSince1970) }
         if publish == .immediate {
             objectWillChange.send()
         }
+        deletionTombstones = Self.prunedTombstones(deletionTombstones + tombstones)
         chatSessions = chatSessions.filter { _, session in
             session.therapistID != therapist.id && session.id != therapist.id
         }
         scheduleChatSessionPublishIfNeeded(publish)
+        return tombstones
     }
 
-    func deleteSession(id: String, publish: ChatSessionPublishMode = .deferred) {
-        guard chatSessions[id] != nil else { return }
+    @discardableResult
+    func deleteSession(id: String, publish: ChatSessionPublishMode = .deferred) -> TherapySessionDeletionTombstone? {
+        guard chatSessions[id] != nil else { return nil }
+        let tombstone = TherapySessionDeletionTombstone(id: id, deletedAt: Date().timeIntervalSince1970)
         if publish == .immediate {
             objectWillChange.send()
         }
+        deletionTombstones = Self.prunedTombstones(deletionTombstones + [tombstone])
         chatSessions[id] = nil
         scheduleChatSessionPublishIfNeeded(publish)
+        return tombstone
     }
 
     func archiveSession(id: String, publish: ChatSessionPublishMode = .deferred) -> ChatSession? {
@@ -793,13 +1148,49 @@ final class ChatStore: ObservableObject {
         return session
     }
 
-    func clearAllChatSessions(publish: ChatSessionPublishMode = .deferred) {
-        guard !chatSessions.isEmpty else { return }
+    @discardableResult
+    func clearAllChatSessions(publish: ChatSessionPublishMode = .deferred) -> [TherapySessionDeletionTombstone] {
+        guard !chatSessions.isEmpty else { return [] }
+        let tombstones = chatSessions.values.map {
+            TherapySessionDeletionTombstone(id: $0.id, deletedAt: Date().timeIntervalSince1970)
+        }
         if publish == .immediate {
             objectWillChange.send()
         }
+        deletionTombstones = Self.prunedTombstones(deletionTombstones + tombstones)
         chatSessions.removeAll()
         scheduleChatSessionPublishIfNeeded(publish)
+        return tombstones
+    }
+
+    private func clearTombstoneIfSessionIsNewer(_ session: ChatSession) {
+        guard let tombstone = Self.tombstoneMap(from: deletionTombstones)[session.id],
+              session.lastUpdated > tombstone.deletedAt else {
+            return
+        }
+        deletionTombstones.removeAll { $0.id == session.id }
+    }
+
+    private static func isDeleted(_ session: ChatSession, tombstones: [String: TherapySessionDeletionTombstone]) -> Bool {
+        guard let tombstone = tombstones[session.id] else { return false }
+        return tombstone.deletedAt >= session.lastUpdated
+    }
+
+    private static func tombstoneMap(from tombstones: [TherapySessionDeletionTombstone]) -> [String: TherapySessionDeletionTombstone] {
+        tombstones.reduce(into: [:]) { result, tombstone in
+            if let existing = result[tombstone.id], existing.deletedAt >= tombstone.deletedAt {
+                return
+            }
+            result[tombstone.id] = tombstone
+        }
+    }
+
+    private static func prunedTombstones(_ tombstones: [TherapySessionDeletionTombstone]) -> [TherapySessionDeletionTombstone] {
+        let cutoff = Date().timeIntervalSince1970 - tombstoneRetention
+        return tombstoneMap(from: tombstones)
+            .values
+            .filter { $0.deletedAt >= cutoff }
+            .sorted { $0.deletedAt > $1.deletedAt }
     }
 
     private func scheduleChatSessionPublishIfNeeded(_ publish: ChatSessionPublishMode) {
@@ -817,33 +1208,85 @@ final class ChatStore: ObservableObject {
 @MainActor
 final class JournalStore: ObservableObject {
     @Published var entries: [JournalEntry] = []
+    @Published private(set) var deletionTombstones: [JournalDeletionTombstone] = []
+
+    private static let tombstoneRetention: TimeInterval = 60 * 60 * 24 * 180
 
     var averageSentiment: Int {
         guard !entries.isEmpty else { return 0 }
         return entries.reduce(0) { $0 + ($1.sentimentScore ?? 50) } / entries.count
     }
 
-    func restore(_ entries: [JournalEntry]) {
-        self.entries = entries.filter { !Self.isSeedReflection($0) }
+    func restore(_ entries: [JournalEntry], deletionTombstones: [JournalDeletionTombstone] = []) {
+        let tombstones = Self.prunedTombstones(deletionTombstones)
+        self.deletionTombstones = tombstones
+        let tombstoneMap = Self.tombstoneMap(from: tombstones)
+        self.entries = entries.filter {
+            !Self.isSeedReflection($0) && !Self.isDeleted($0, tombstones: tombstoneMap)
+        }
+    }
+
+    func mergeCloudSummaries(_ remoteEntries: [JournalEntry]) {
+        guard !remoteEntries.isEmpty else { return }
+        let tombstoneMap = Self.tombstoneMap(from: deletionTombstones)
+        var merged = entries.filter {
+            !Self.isSeedReflection($0) && !Self.isDeleted($0, tombstones: tombstoneMap)
+        }
+
+        for remote in remoteEntries where !Self.isSeedReflection(remote) && !Self.isDeleted(remote, tombstones: tombstoneMap) {
+            if let index = merged.firstIndex(where: { $0.id == remote.id }) {
+                merged[index] = Self.mergedLocalEntry(merged[index], withCloudSummary: remote)
+            } else {
+                merged.append(remote)
+            }
+        }
+
+        entries = merged.sorted {
+            if $0.isPinned != $1.isPinned {
+                return $0.isPinned && !$1.isPinned
+            }
+            return $0.timestamp > $1.timestamp
+        }
+    }
+
+    func mergeCloudDeletions(_ remoteTombstones: [JournalDeletionTombstone]) {
+        guard !remoteTombstones.isEmpty else { return }
+        deletionTombstones = Self.prunedTombstones(deletionTombstones + remoteTombstones)
+        let tombstoneMap = Self.tombstoneMap(from: deletionTombstones)
+        entries.removeAll { Self.isDeleted($0, tombstones: tombstoneMap) }
     }
 
     func addEntry(_ entry: JournalEntry) {
+        clearTombstoneIfEntryIsNewer(entry)
         entries.insert(entry, at: 0)
     }
 
     func updateEntry(_ entry: JournalEntry) {
+        clearTombstoneIfEntryIsNewer(entry)
         if let idx = entries.firstIndex(where: { $0.id == entry.id }) {
             entries[idx] = entry
         }
     }
 
-    func deleteEntry(id: String) {
+    @discardableResult
+    func deleteEntry(id: String) -> JournalDeletionTombstone {
+        let tombstone = JournalDeletionTombstone(id: id, deletedAt: Date().timeIntervalSince1970)
+        deletionTombstones = Self.prunedTombstones(deletionTombstones + [tombstone])
         entries.removeAll { $0.id == id }
+        return tombstone
     }
 
     func togglePin(id: String) {
         guard let idx = entries.firstIndex(where: { $0.id == id }) else { return }
         entries[idx].isPinned.toggle()
+    }
+
+    private func clearTombstoneIfEntryIsNewer(_ entry: JournalEntry) {
+        guard let tombstone = Self.tombstoneMap(from: deletionTombstones)[entry.id],
+              entry.timestamp > tombstone.deletedAt else {
+            return
+        }
+        deletionTombstones.removeAll { $0.id == entry.id }
     }
 
     private static func isSeedReflection(_ entry: JournalEntry) -> Bool {
@@ -855,6 +1298,48 @@ final class JournalStore: ObservableObject {
         ]
         return ["1", "2", "3", "4"].contains(entry.id) && seedTitles.contains(entry.title)
     }
+
+    private static func isDeleted(_ entry: JournalEntry, tombstones: [String: JournalDeletionTombstone]) -> Bool {
+        guard let tombstone = tombstones[entry.id] else { return false }
+        return tombstone.deletedAt >= entry.timestamp
+    }
+
+    private static func tombstoneMap(from tombstones: [JournalDeletionTombstone]) -> [String: JournalDeletionTombstone] {
+        tombstones.reduce(into: [:]) { result, tombstone in
+            if let existing = result[tombstone.id], existing.deletedAt >= tombstone.deletedAt {
+                return
+            }
+            result[tombstone.id] = tombstone
+        }
+    }
+
+    private static func prunedTombstones(_ tombstones: [JournalDeletionTombstone]) -> [JournalDeletionTombstone] {
+        let cutoff = Date().timeIntervalSince1970 - tombstoneRetention
+        return tombstoneMap(from: tombstones)
+            .values
+            .filter { $0.deletedAt >= cutoff }
+            .sorted { $0.deletedAt > $1.deletedAt }
+    }
+
+    private static func mergedLocalEntry(_ local: JournalEntry, withCloudSummary remote: JournalEntry) -> JournalEntry {
+        JournalEntry(
+            id: local.id,
+            date: local.date.isEmpty ? remote.date : local.date,
+            timestamp: max(local.timestamp, remote.timestamp),
+            title: local.title.isEmpty ? remote.title : local.title,
+            content: local.content,
+            mood: local.mood,
+            tags: local.tags.isEmpty ? remote.tags : local.tags,
+            reflection: local.reflection ?? remote.reflection,
+            actionItem: local.actionItem ?? remote.actionItem,
+            summary: local.summary ?? remote.summary,
+            sentimentScore: local.sentimentScore ?? remote.sentimentScore,
+            energyLevel: local.energyLevel ?? remote.energyLevel,
+            anxietyLevel: local.anxietyLevel ?? remote.anxietyLevel,
+            therapyMemoryPolicy: local.therapyMemoryPolicy ?? remote.therapyMemoryPolicy,
+            isPinned: local.isPinned || remote.isPinned
+        )
+    }
 }
 
 @MainActor
@@ -863,6 +1348,14 @@ final class JournalInsightStore: ObservableObject {
 
     func restore(_ state: PersistedJournalInsightState) {
         dailyInsight = state.dailyInsight
+    }
+
+    func mergeCloudInsight(_ insight: DailyJournalInsights?) {
+        guard let insight else { return }
+        if let current = dailyInsight, current.generatedAt >= insight.generatedAt {
+            return
+        }
+        dailyInsight = insight
     }
 
     func snapshot() -> PersistedJournalInsightState {
@@ -880,35 +1373,44 @@ final class JournalInsightStore: ObservableObject {
 
 @MainActor
 final class GardenStore: ObservableObject {
-    @Published var habits: [Habit] = [
-        Habit(id: "1", title: "Drink a glass of warm water", description: "Start the day hydrated.", completedAt: nil, createdAt: Date().timeIntervalSince1970, plantType: .sprout, growth: 30),
-        Habit(id: "2", title: "Look out the window for 2 mins", description: "Rest your eyes.", completedAt: nil, createdAt: Date().timeIntervalSince1970, plantType: .flower, growth: 70),
-        Habit(id: "3", title: "Write one sentence of gratitude", description: "Ground in what is good.", completedAt: nil, createdAt: Date().timeIntervalSince1970, plantType: .seed, growth: 10),
-        Habit(id: "4", title: "Take a 5-minute walk", description: "Move to clear the mind.", completedAt: nil, createdAt: Date().timeIntervalSince1970, plantType: .tree, growth: 100),
-    ]
+    @Published var habits: [Habit] = []
     @Published var waterDrops: Int = 5
     @Published var gardenDecorations: [GardenDecoration] = []
-    @Published var claimedGardenQuestIDs: Set<String> = []
+    @Published var keptGardenPromptIDs: Set<String> = []
     @Published var therapyMicroPlans: [MicroPlan] = []
     @Published var forageItems: [GardenForageItem] = []
-    @Published var dailyEvents: [GardenDailyEvent] = []
+    @Published var visitorInvitations: [GardenVisitorInvitation] = []
     @Published var keepsakes: [GardenKeepsake] = []
     @Published var unlockedAreas: [GardenMapAreaUnlock] = []
     @Published var areaVisits: [GardenMapAreaVisit] = []
     @Published var areaMilestones: [GardenAreaMilestoneUnlock] = []
 
     func restore(_ state: PersistedGardenState) {
-        habits = state.habits
+        habits = state.habits.filter { !Self.isSeedHabit($0) }
         waterDrops = state.waterDrops
         gardenDecorations = state.gardenDecorations
-        claimedGardenQuestIDs = state.claimedGardenQuestIDs
+        keptGardenPromptIDs = state.keptGardenPromptIDs
         therapyMicroPlans = state.therapyMicroPlans
         forageItems = state.forageItems
-        dailyEvents = state.dailyEvents
+        visitorInvitations = state.visitorInvitations
         keepsakes = state.keepsakes
         unlockedAreas = state.unlockedAreas
         areaVisits = state.areaVisits
         areaMilestones = state.areaMilestones
+    }
+
+    func mergeCloudState(_ state: PersistedGardenState) {
+        habits = Self.mergeHabits(local: habits, remote: state.habits.filter { !Self.isSeedHabit($0) })
+        waterDrops = max(waterDrops, state.waterDrops)
+        gardenDecorations = Self.mergeByID(local: gardenDecorations, remote: state.gardenDecorations)
+        keptGardenPromptIDs.formUnion(state.keptGardenPromptIDs)
+        therapyMicroPlans = Self.mergeByID(local: therapyMicroPlans, remote: state.therapyMicroPlans)
+        forageItems = Self.mergeByID(local: forageItems, remote: state.forageItems)
+        visitorInvitations = Self.mergeByID(local: visitorInvitations, remote: state.visitorInvitations)
+        keepsakes = Self.mergeByID(local: keepsakes, remote: state.keepsakes)
+        unlockedAreas = Self.mergeByID(local: unlockedAreas, remote: state.unlockedAreas)
+        areaVisits = Self.mergeByID(local: areaVisits, remote: state.areaVisits)
+        areaMilestones = Self.mergeByID(local: areaMilestones, remote: state.areaMilestones)
     }
 
     func snapshot() -> PersistedGardenState {
@@ -916,10 +1418,10 @@ final class GardenStore: ObservableObject {
             habits: habits,
             waterDrops: waterDrops,
             gardenDecorations: gardenDecorations,
-            claimedGardenQuestIDs: claimedGardenQuestIDs,
+            keptGardenPromptIDs: keptGardenPromptIDs,
             therapyMicroPlans: therapyMicroPlans,
             forageItems: forageItems,
-            dailyEvents: dailyEvents,
+            visitorInvitations: visitorInvitations,
             keepsakes: keepsakes,
             unlockedAreas: unlockedAreas,
             areaVisits: areaVisits,
@@ -931,20 +1433,25 @@ final class GardenStore: ObservableObject {
         habits.first { $0.id == id }
     }
 
+    func isHabitCompletedToday(_ habit: Habit, now: Date = Date()) -> Bool {
+        guard let completedAt = habit.completedAt else { return false }
+        return Calendar.current.isDate(Date(timeIntervalSince1970: completedAt), inSameDayAs: now)
+    }
+
     func completeHabit(id: String) {
         guard let idx = habits.firstIndex(where: { $0.id == id }) else { return }
-        if habits[idx].completedAt == nil {
-            completeHabit(at: idx, reward: 3)
-        } else {
+        if isHabitCompletedToday(habits[idx]) {
             habits[idx].completedAt = nil
+        } else {
+            completeHabit(at: idx, dewAmount: 3)
         }
     }
 
     @discardableResult
-    func completeHabitIfNeeded(id: String, reward: Int = 3) -> Bool {
+    func completeHabitIfNeeded(id: String, dewAmount: Int = 3) -> Bool {
         guard let idx = habits.firstIndex(where: { $0.id == id }),
-              habits[idx].completedAt == nil else { return false }
-        completeHabit(at: idx, reward: reward)
+              !isHabitCompletedToday(habits[idx]) else { return false }
+        completeHabit(at: idx, dewAmount: dewAmount)
         return true
     }
 
@@ -966,13 +1473,13 @@ final class GardenStore: ObservableObject {
         }
     }
 
-    func canPlaceGardenDecoration(_ type: GardenDecorationType) -> Bool {
+    func canArrangeGardenDecoration(_ type: GardenDecorationType) -> Bool {
         waterDrops >= type.dewCost
     }
 
     @discardableResult
-    func placeGardenDecoration(type: GardenDecorationType, anchorHabitID: String, x: Double, y: Double) -> Bool {
-        guard canPlaceGardenDecoration(type) else { return false }
+    func arrangeGardenDecoration(type: GardenDecorationType, anchorHabitID: String, x: Double, y: Double) -> Bool {
+        guard canArrangeGardenDecoration(type) else { return false }
         waterDrops -= type.dewCost
         gardenDecorations.append(
             GardenDecoration(
@@ -989,103 +1496,137 @@ final class GardenStore: ObservableObject {
     }
 
     @discardableResult
-    func claimGardenQuest(id: String, reward: Int) -> Bool {
-        guard !claimedGardenQuestIDs.contains(id), reward > 0 else { return false }
-        claimedGardenQuestIDs.insert(id)
-        waterDrops += reward
+    func touchGardenPrompt(id: String, dewAmount: Int) -> Bool {
+        guard !keptGardenPromptIDs.contains(id), dewAmount > 0 else { return false }
+        keptGardenPromptIDs.insert(id)
+        waterDrops += dewAmount
         return true
     }
 
     var activeForageItems: [GardenForageItem] {
-        forageItems.filter { !$0.isClaimed }
+        forageItems.filter { !$0.isGathered }
     }
 
-    func refreshDailyForage(now: Date = Date()) {
+    func refreshAmbientForage(now: Date = Date()) {
         let dayKey = GardenForageItem.dayKey(for: now)
         forageItems = forageItems.filter { $0.dayKey == dayKey }
-        guard forageItems.isEmpty else { return }
+        if !forageItems.isEmpty {
+            forageItems = forageItems.enumerated().map { index, item in
+                let position = Self.ambientForagePositions[index % Self.ambientForagePositions.count]
+                return GardenForageItem(
+                    id: item.id,
+                    kind: item.kind,
+                    dayKey: item.dayKey,
+                    x: position.x,
+                    y: position.y,
+                    dewAmount: item.dewAmount,
+                    spawnedAt: item.spawnedAt,
+                    gatheredAt: item.gatheredAt
+                )
+            }
+            return
+        }
 
-        forageItems = Self.dailyForagePositions.enumerated().map { index, position in
+        forageItems = Self.ambientForagePositions.enumerated().map { index, position in
             GardenForageItem(
                 id: "dew-\(dayKey)-\(index)",
                 dayKey: dayKey,
                 x: position.x,
                 y: position.y,
-                reward: index == 0 ? 2 : 1,
+                dewAmount: index == 0 ? 2 : 1,
                 spawnedAt: now.timeIntervalSince1970
             )
         }
     }
 
     @discardableResult
-    func claimForageItem(id: String, now: Date = Date()) -> GardenForageItem? {
-        guard let index = forageItems.firstIndex(where: { $0.id == id && !$0.isClaimed }) else {
+    func gatherForageItem(id: String, now: Date = Date()) -> GardenForageItem? {
+        guard let index = forageItems.firstIndex(where: { $0.id == id && !$0.isGathered }) else {
             return nil
         }
 
         var item = forageItems[index]
-        item.claimedAt = now.timeIntervalSince1970
+        item.gatheredAt = now.timeIntervalSince1970
         forageItems[index] = item
-        waterDrops += item.reward
+        waterDrops += item.dewAmount
         return item
     }
 
-    func activeDailyEvent(on date: Date = Date()) -> GardenDailyEvent? {
+    func activeVisitorInvitation(on date: Date = Date()) -> GardenVisitorInvitation? {
         let dayKey = GardenForageItem.dayKey(for: date)
-        return dailyEvents.first { $0.dayKey == dayKey && !$0.isDismissed && !$0.isCompleted }
+        return visitorInvitations.first { $0.dayKey == dayKey && !$0.isDismissed && !$0.isCompleted }
     }
 
-    func refreshDailyEvent(now: Date = Date()) {
+    func refreshVisitorInvitation(now: Date = Date()) {
         let dayKey = GardenForageItem.dayKey(for: now)
-        dailyEvents = dailyEvents.filter { $0.dayKey == dayKey }
-        guard dailyEvents.isEmpty else { return }
-        dailyEvents = [GardenDailyEvent.make(for: now)]
+        visitorInvitations = visitorInvitations.filter { $0.dayKey == dayKey }
+        if !visitorInvitations.isEmpty {
+            let updatedPlacement = GardenVisitorInvitation.make(for: now)
+            visitorInvitations = visitorInvitations.map { invitation in
+                GardenVisitorInvitation(
+                    id: invitation.id,
+                    dayKey: invitation.dayKey,
+                    visitor: invitation.visitor,
+                    invitationKind: invitation.invitationKind,
+                    targetCount: invitation.targetCount,
+                    dewAmount: invitation.dewAmount,
+                    x: updatedPlacement.x,
+                    y: updatedPlacement.y,
+                    spawnedAt: invitation.spawnedAt,
+                    acceptedAt: invitation.acceptedAt,
+                    completedAt: invitation.completedAt,
+                    dismissedAt: invitation.dismissedAt
+                )
+            }
+            return
+        }
+        visitorInvitations = [GardenVisitorInvitation.make(for: now)]
     }
 
     @discardableResult
-    func acceptDailyEvent(id: String, now: Date = Date()) -> GardenDailyEvent? {
-        guard let index = dailyEvents.firstIndex(where: { $0.id == id && !$0.isDismissed && !$0.isCompleted }) else {
+    func acceptVisitorInvitation(id: String, now: Date = Date()) -> GardenVisitorInvitation? {
+        guard let index = visitorInvitations.firstIndex(where: { $0.id == id && !$0.isDismissed && !$0.isCompleted }) else {
             return nil
         }
-        if dailyEvents[index].acceptedAt == nil {
-            dailyEvents[index].acceptedAt = now.timeIntervalSince1970
+        if visitorInvitations[index].acceptedAt == nil {
+            visitorInvitations[index].acceptedAt = now.timeIntervalSince1970
         }
-        return dailyEvents[index]
+        return visitorInvitations[index]
     }
 
     @discardableResult
-    func completeDailyEvent(id: String, progress: Int, now: Date = Date()) -> GardenDailyEvent? {
-        guard let index = dailyEvents.firstIndex(where: { $0.id == id && !$0.isDismissed && !$0.isCompleted }),
-              dailyEvents[index].isAccepted,
-              progress >= dailyEvents[index].taskGoal else {
+    func settleVisitorInvitation(id: String, progress: Int, now: Date = Date()) -> GardenVisitorInvitation? {
+        guard let index = visitorInvitations.firstIndex(where: { $0.id == id && !$0.isDismissed && !$0.isCompleted }),
+              visitorInvitations[index].isAccepted,
+              progress >= visitorInvitations[index].targetCount else {
             return nil
         }
 
-        dailyEvents[index].completedAt = now.timeIntervalSince1970
-        waterDrops += dailyEvents[index].reward
+        visitorInvitations[index].completedAt = now.timeIntervalSince1970
+        waterDrops += visitorInvitations[index].dewAmount
         unlockKeepsake(
-            kind: GardenKeepsakeKind.reward(for: dailyEvents[index].visitor),
-            visitor: dailyEvents[index].visitor,
-            sourceEventID: dailyEvents[index].id,
+            kind: GardenKeepsakeKind.keepsake(for: visitorInvitations[index].visitor),
+            visitor: visitorInvitations[index].visitor,
+            sourceInvitationID: visitorInvitations[index].id,
             now: now
         )
-        return dailyEvents[index]
+        return visitorInvitations[index]
     }
 
     @discardableResult
-    func dismissDailyEvent(id: String, now: Date = Date()) -> GardenDailyEvent? {
-        guard let index = dailyEvents.firstIndex(where: { $0.id == id && !$0.isCompleted }) else {
+    func dismissVisitorInvitation(id: String, now: Date = Date()) -> GardenVisitorInvitation? {
+        guard let index = visitorInvitations.firstIndex(where: { $0.id == id && !$0.isCompleted }) else {
             return nil
         }
-        dailyEvents[index].dismissedAt = now.timeIntervalSince1970
-        return dailyEvents[index]
+        visitorInvitations[index].dismissedAt = now.timeIntervalSince1970
+        return visitorInvitations[index]
     }
 
     @discardableResult
     func unlockKeepsake(
         kind: GardenKeepsakeKind,
         visitor: GardenVisitorKind,
-        sourceEventID: String,
+        sourceInvitationID: String,
         now: Date = Date()
     ) -> GardenKeepsake? {
         if let existing = keepsakes.first(where: { $0.kind == kind }) {
@@ -1095,12 +1636,12 @@ final class GardenStore: ObservableObject {
         let keepsake = GardenKeepsake(
             kind: kind,
             visitor: visitor,
-            unlockedAt: now.timeIntervalSince1970,
-            sourceEventID: sourceEventID
+            openedAt: now.timeIntervalSince1970,
+            sourceInvitationID: sourceInvitationID
         )
         keepsakes.append(keepsake)
         unlockMapArea(
-            area: GardenMapAreaKind.reward(for: kind),
+            area: GardenMapAreaKind.area(for: kind),
             sourceKeepsakeID: keepsake.id,
             now: now
         )
@@ -1156,7 +1697,7 @@ final class GardenStore: ObservableObject {
         let visit = GardenMapAreaVisit(
             area: area,
             dayKey: GardenForageItem.dayKey(for: now),
-            reward: area.dailyReward,
+            dewAmount: area.visitDewAmount,
             completedAt: now.timeIntervalSince1970
         )
         areaVisits.append(visit)
@@ -1172,15 +1713,37 @@ final class GardenStore: ObservableObject {
                 area: area,
                 stage: definition.stage,
                 requiredVisits: definition.requiredVisits,
-                reward: definition.reward,
+                dewAmount: definition.dewAmount,
                 unlockedAt: now.timeIntervalSince1970
             )
         }
 
         areaMilestones.append(contentsOf: unlockedMilestones)
         let result = GardenAreaActionResult(visit: visit, unlockedMilestones: unlockedMilestones)
-        waterDrops += result.totalReward
+        waterDrops += result.totalDewAmount
         return result
+    }
+
+    @discardableResult
+    func plantStarterRoutine(title: String, description: String) -> Habit? {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedTitle.isEmpty else { return nil }
+        guard !habits.contains(where: { $0.title.caseInsensitiveCompare(normalizedTitle) == .orderedSame }) else {
+            return nil
+        }
+
+        let habit = Habit(
+            id: "garden-routine-\(Self.slug(normalizedTitle))-\(Int(Date().timeIntervalSince1970))",
+            title: normalizedTitle,
+            description: normalizedDescription.isEmpty ? "A small routine you chose for the grove." : normalizedDescription,
+            completedAt: nil,
+            createdAt: Date().timeIntervalSince1970,
+            plantType: .seed,
+            growth: 0
+        )
+        habits.insert(habit, at: 0)
+        return habit
     }
 
     @discardableResult
@@ -1206,8 +1769,43 @@ final class GardenStore: ObservableObject {
         return habit
     }
 
-    private func completeHabit(at index: Int, reward: Int) {
-        waterDrops += reward
+    @discardableResult
+    func upsertJournalMemoryPlant(for entry: JournalEntry) -> Habit? {
+        let title = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let content = entry.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty || !content.isEmpty else { return nil }
+
+        let plantTitle = title.isEmpty ? "A saved reflection" : title
+        let plantDescription = Self.journalMemoryDescription(for: entry)
+        if let index = habits.firstIndex(where: { $0.sourceJournalEntryID == entry.id }) {
+            habits[index].title = plantTitle
+            habits[index].description = plantDescription
+            habits[index].createdAt = entry.timestamp
+            habits[index].growth = max(habits[index].growth, 35)
+            updatePlantType(at: index)
+            return habits[index]
+        }
+
+        let habit = Habit(
+            id: "journal-memory-\(entry.id)",
+            title: plantTitle,
+            description: plantDescription,
+            completedAt: nil,
+            createdAt: entry.timestamp,
+            plantType: .sprout,
+            growth: 35,
+            sourceJournalEntryID: entry.id
+        )
+        habits.insert(habit, at: 0)
+        return habit
+    }
+
+    func removeJournalMemoryPlant(entryID: String) {
+        habits.removeAll { $0.sourceJournalEntryID == entryID }
+    }
+
+    private func completeHabit(at index: Int, dewAmount: Int) {
+        waterDrops += dewAmount
         habits[index].completedAt = Date().timeIntervalSince1970
         habits[index].growth = max(habits[index].growth, min(100, habits[index].growth + 30))
         updatePlantType(at: index)
@@ -1226,10 +1824,106 @@ final class GardenStore: ObservableObject {
         }
     }
 
-    private static let dailyForagePositions: [(x: Double, y: Double)] = [
-        (0.22, 0.24),
-        (0.78, 0.36),
-        (0.42, 0.56)
+    private static func isSeedHabit(_ habit: Habit) -> Bool {
+        let seedTitles: Set<String> = [
+            "Drink a glass of warm water",
+            "Look out the window for 2 mins",
+            "Write one sentence of gratitude",
+            "Take a 5-minute walk"
+        ]
+        return ["1", "2", "3", "4"].contains(habit.id) && seedTitles.contains(habit.title)
+    }
+
+    private static func mergeHabits(local: [Habit], remote: [Habit]) -> [Habit] {
+        var merged = local.filter { !isSeedHabit($0) }
+        for remoteHabit in remote where !isSeedHabit(remoteHabit) {
+            if let index = merged.firstIndex(where: { $0.id == remoteHabit.id }) {
+                var localHabit = merged[index]
+                localHabit.growth = max(localHabit.growth, remoteHabit.growth)
+                localHabit.plantType = Self.strongerPlantType(localHabit.plantType, remoteHabit.plantType)
+                switch (localHabit.completedAt, remoteHabit.completedAt) {
+                case (nil, let remoteCompletedAt?):
+                    localHabit.completedAt = remoteCompletedAt
+                case (let localCompletedAt?, let remoteCompletedAt?):
+                    localHabit.completedAt = max(localCompletedAt, remoteCompletedAt)
+                default:
+                    break
+                }
+                if localHabit.description.isEmpty {
+                    localHabit.description = remoteHabit.description
+                }
+                if localHabit.sourceMicroPlanID == nil {
+                    localHabit.sourceMicroPlanID = remoteHabit.sourceMicroPlanID
+                }
+                if localHabit.sourceJournalEntryID == nil {
+                    localHabit.sourceJournalEntryID = remoteHabit.sourceJournalEntryID
+                }
+                merged[index] = localHabit
+            } else {
+                merged.append(remoteHabit)
+            }
+        }
+        return merged.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    private static func strongerPlantType(_ left: PlantType, _ right: PlantType) -> PlantType {
+        func rank(_ type: PlantType) -> Int {
+            switch type {
+            case .seed: return 0
+            case .sprout: return 1
+            case .flower: return 2
+            case .tree: return 3
+            }
+        }
+        return rank(left) >= rank(right) ? left : right
+    }
+
+    private static func mergeByID<Item: Identifiable>(local: [Item], remote: [Item]) -> [Item] where Item.ID == String {
+        var merged = local
+        for item in remote where !merged.contains(where: { $0.id == item.id }) {
+            merged.append(item)
+        }
+        return merged
+    }
+
+    private static func slug(_ value: String) -> String {
+        let allowed = CharacterSet.alphanumerics
+        return value
+            .lowercased()
+            .unicodeScalars
+            .map { allowed.contains($0) ? Character($0) : "-" }
+            .reduce("") { partial, character in
+                let string = String(character)
+                if partial.last == "-", string == "-" { return partial }
+                return partial + string
+            }
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+    }
+
+    private static func journalMemoryDescription(for entry: JournalEntry) -> String {
+        let candidates = [
+            entry.summary,
+            entry.reflection,
+            entry.actionItem,
+            entry.content
+        ]
+        let raw = candidates
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? "A reflection saved into the grove."
+        let cleaned = raw
+            .replacingOccurrences(of: "#", with: "")
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "- ", with: "")
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard cleaned.count > 150 else { return cleaned }
+        return String(cleaned.prefix(147)).trimmingCharacters(in: .whitespacesAndNewlines) + "..."
+    }
+
+    private static let ambientForagePositions: [(x: Double, y: Double)] = [
+        (0.18, 0.48),
+        (0.82, 0.50),
+        (0.57, 0.36)
     ]
 }
 
@@ -1290,164 +1984,25 @@ final class FollowUpStore: ObservableObject {
     }
 }
 
-final class HealthKitService {
-    private let healthStore = HKHealthStore()
-    private let calendar = Calendar.current
-
+final class HealthContextService {
     var isAvailable: Bool {
-        HKHealthStore.isHealthDataAvailable()
+        false
     }
 
     func requestAuthorization() async throws {
-        guard isAvailable else { throw HealthKitServiceError.unavailable }
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            healthStore.requestAuthorization(toShare: [], read: readTypes) { success, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                } else if success {
-                    continuation.resume()
-                } else {
-                    continuation.resume(throwing: HealthKitServiceError.authorizationDenied)
-                }
-            }
-        }
+        throw HealthContextServiceError.comingSoon
     }
 
     func fetchDailySummaries(days: Int) async throws -> [DailyHealthSummary] {
-        guard isAvailable else { throw HealthKitServiceError.unavailable }
-        let startOfToday = calendar.startOfDay(for: Date())
-        let count = max(1, min(days, 30))
-
-        return try await withThrowingTaskGroup(of: DailyHealthSummary.self) { group in
-            for offset in 0..<count {
-                guard let day = calendar.date(byAdding: .day, value: -offset, to: startOfToday),
-                      let nextDay = calendar.date(byAdding: .day, value: 1, to: day) else { continue }
-                group.addTask {
-                    try await self.fetchSummary(for: day, end: nextDay)
-                }
-            }
-
-            var summaries: [DailyHealthSummary] = []
-            for try await summary in group {
-                summaries.append(summary)
-            }
-            return summaries.sorted { $0.date > $1.date }
-        }
-    }
-
-    private var readTypes: Set<HKObjectType> {
-        var types = Set<HKObjectType>()
-        [
-            HKQuantityTypeIdentifier.stepCount,
-            .activeEnergyBurned,
-            .appleExerciseTime,
-            .restingHeartRate,
-            .heartRate
-        ].compactMap { HKObjectType.quantityType(forIdentifier: $0) }.forEach { types.insert($0) }
-
-        if let sleep = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {
-            types.insert(sleep)
-        }
-        return types
-    }
-
-    private func fetchSummary(for start: Date, end: Date) async throws -> DailyHealthSummary {
-        async let steps = quantitySum(.stepCount, unit: .count(), start: start, end: end)
-        async let energy = quantitySum(.activeEnergyBurned, unit: .kilocalorie(), start: start, end: end)
-        async let exercise = quantitySum(.appleExerciseTime, unit: .minute(), start: start, end: end)
-        async let restingHR = quantityAverage(.restingHeartRate, unit: heartRateUnit, start: start, end: end)
-        async let averageHR = quantityAverage(.heartRate, unit: heartRateUnit, start: start, end: end)
-        async let sleep = sleepMinutes(start: start, end: end)
-
-        return try await DailyHealthSummary(
-            date: start,
-            stepCount: steps,
-            activeEnergyKcal: energy,
-            exerciseMinutes: exercise,
-            sleepMinutes: sleep,
-            restingHeartRate: restingHR,
-            averageHeartRate: averageHR
-        )
-    }
-
-    private var heartRateUnit: HKUnit {
-        HKUnit.count().unitDivided(by: .minute())
-    }
-
-    private func quantitySum(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, start: Date, end: Date) async throws -> Double? {
-        guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { return nil }
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [.strictStartDate])
-
-        return try await withCheckedThrowingContinuation { continuation in
-            let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, statistics, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                continuation.resume(returning: statistics?.sumQuantity()?.doubleValue(for: unit))
-            }
-            healthStore.execute(query)
-        }
-    }
-
-    private func quantityAverage(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit, start: Date, end: Date) async throws -> Double? {
-        guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { return nil }
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [.strictStartDate])
-
-        return try await withCheckedThrowingContinuation { continuation in
-            let query = HKStatisticsQuery(quantityType: type, quantitySamplePredicate: predicate, options: .discreteAverage) { _, statistics, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                continuation.resume(returning: statistics?.averageQuantity()?.doubleValue(for: unit))
-            }
-            healthStore.execute(query)
-        }
-    }
-
-    private func sleepMinutes(start: Date, end: Date) async throws -> Double? {
-        guard let type = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) else { return nil }
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: [])
-        let asleepValues = Set([
-            HKCategoryValueSleepAnalysis.asleepCore.rawValue,
-            HKCategoryValueSleepAnalysis.asleepDeep.rawValue,
-            HKCategoryValueSleepAnalysis.asleepREM.rawValue,
-            HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
-        ])
-
-        return try await withCheckedThrowingContinuation { continuation in
-            let query = HKSampleQuery(sampleType: type, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                let totalSeconds = (samples as? [HKCategorySample] ?? [])
-                    .filter { asleepValues.contains($0.value) }
-                    .reduce(0) { total, sample in
-                        let overlapStart = max(sample.startDate, start)
-                        let overlapEnd = min(sample.endDate, end)
-                        return total + max(0, overlapEnd.timeIntervalSince(overlapStart))
-                    }
-                continuation.resume(returning: totalSeconds > 0 ? totalSeconds / 60 : nil)
-            }
-            healthStore.execute(query)
-        }
+        throw HealthContextServiceError.comingSoon
     }
 }
 
-enum HealthKitServiceError: LocalizedError {
-    case unavailable
-    case authorizationDenied
+enum HealthContextServiceError: LocalizedError {
+    case comingSoon
 
     var errorDescription: String? {
-        switch self {
-        case .unavailable:
-            return "Health data is not available on this device."
-        case .authorizationDenied:
-            return "Health permission was not granted."
-        }
+        "Health context is coming soon."
     }
 }
 
@@ -1461,13 +2016,23 @@ final class HealthDataStore: ObservableObject {
     @Published var lastError: String?
     @Published var hasAcknowledgedDataUse = false
 
-    private let service = HealthKitService()
+    private let service = HealthContextService()
 
     init() {
         permissionState = service.isAvailable ? .notDetermined : .unavailable
     }
 
     func restore(_ state: PersistedHealthDataState) {
+        guard service.isAvailable else {
+            permissionState = .unavailable
+            summaries = []
+            baseline = nil
+            lastSyncAt = nil
+            isSyncing = false
+            lastError = nil
+            hasAcknowledgedDataUse = false
+            return
+        }
         permissionState = service.isAvailable ? state.permissionState : .unavailable
         summaries = state.summaries
         baseline = state.baseline
@@ -1495,7 +2060,7 @@ final class HealthDataStore: ObservableObject {
     func requestAuthorizationAndSync(days: Int = 14) async {
         guard service.isAvailable else {
             permissionState = .unavailable
-            lastError = "Health data is not available on this device."
+            lastError = "Health context is coming soon."
             return
         }
 
@@ -1774,7 +2339,10 @@ final class JITAIStore: ObservableObject {
             ))
         }
 
-        if let nextHabit = habits.first(where: { $0.completedAt == nil }) {
+        if let nextHabit = habits.first(where: { habit in
+            guard let completedAt = habit.completedAt else { return true }
+            return !Self.isSameDay(Date(timeIntervalSince1970: completedAt), now)
+        }) {
             candidates.append(JITAIDecision(
                 id: "jitai-garden-\(dayKey)-\(nextHabit.id)",
                 kind: .garden,
@@ -1990,6 +2558,8 @@ final class EvaluationStore: ObservableObject {
 final class ProfileStore: ObservableObject {
     @Published var userName: String = "User"
     @Published var userBio: String = ""
+    @Published var avatarID: ProfileAvatarID = .cat
+    @Published var gender: ProfileGender = .notSpecified
     @Published var joinDate: Date = Date()
     @Published var dailyReminderEnabled: Bool = false
     @Published var dailyReminderHour: Int = 9
@@ -2003,6 +2573,8 @@ final class ProfileStore: ObservableObject {
     func restore(_ state: PersistedProfileState) {
         userName = state.userName
         userBio = state.userBio
+        avatarID = state.avatarID
+        gender = state.gender
         joinDate = state.joinDate
         dailyReminderEnabled = state.dailyReminderEnabled
         dailyReminderHour = state.dailyReminderHour
@@ -2018,6 +2590,8 @@ final class ProfileStore: ObservableObject {
         PersistedProfileState(
             userName: userName,
             userBio: userBio,
+            avatarID: avatarID,
+            gender: gender,
             joinDate: joinDate,
             dailyReminderEnabled: dailyReminderEnabled,
             dailyReminderHour: dailyReminderHour,
@@ -2264,28 +2838,62 @@ final class AccountStore: ObservableObject {
 @MainActor
 final class SubscriptionStore: ObservableObject {
     @Published private(set) var state = SubscriptionState()
+    @Published private(set) var usage = SubscriptionUsageState()
 
     var hasPremiumAccess: Bool {
         state.hasPremiumAccess
     }
 
+    var allowance: SubscriptionAllowance {
+        var normalized = usage
+        normalized.normalize()
+        return SubscriptionAllowance(
+            hasPremiumAccess: hasPremiumAccess,
+            aiChatRepliesToday: normalized.aiChatRepliesToday,
+            liveCallSecondsToday: normalized.liveCallSecondsToday,
+            liveCallSecondsThisMonth: normalized.liveCallSecondsThisMonth
+        )
+    }
+
     func restore(_ persisted: PersistedSubscriptionState) {
         state = persisted.subscription
+        usage = persisted.usage
+        usage.normalize()
     }
 
     func snapshot() -> PersistedSubscriptionState {
-        PersistedSubscriptionState(subscription: state)
+        var normalized = usage
+        normalized.normalize()
+        return PersistedSubscriptionState(subscription: state, usage: normalized)
     }
 
     func update(_ nextState: SubscriptionState) {
         state = nextState
     }
 
+    func recordAIChatReply() {
+        usage.recordAIChatReply()
+    }
+
+    func recordLiveCall(seconds: Int) {
+        usage.recordLiveCall(seconds: seconds)
+    }
+
+    func canStartAIChatReply() -> Bool {
+        allowance.canUseAIChat
+    }
+
+    func canStartLiveCall() -> Bool {
+        allowance.canStartLiveCall
+    }
+
     func canUse(_ feature: PremiumFeature) -> Bool {
         switch feature {
         case .therapyChat:
             return true
-        case .deepInsights, .liveCall, .advancedMemory, .gardenPremium:
+        case .liveCall:
+            return canStartLiveCall()
+        case .deepInsights, .advancedMemory, .gardenPremium:
             return hasPremiumAccess
         }
     }
@@ -2308,19 +2916,52 @@ final class AppState: ObservableObject {
     let accountStore = AccountStore()
     let subscriptionStore = SubscriptionStore()
     let firebaseBackend = FirebaseBackendService()
+    let revenueCatService = RevenueCatSubscriptionService()
+
+    @Published private(set) var isNetworkAvailable = true
 
     private let persistenceService = PersistenceService()
+    private let networkMonitor = NWPathMonitor()
+    private let networkMonitorQueue = DispatchQueue(label: "lumina.network.monitor")
     private var cancellables: Set<AnyCancellable> = []
     private var saveTask: Task<Void, Never>?
     private var didStartLaunchServices = false
     private var cloudSessionSyncTasks: [String: Task<Void, Never>] = [:]
+    private var cloudSessionDeletionSyncTasks: [String: Task<Void, Never>] = [:]
+    private var cloudSessionDeletionBulkSyncTask: Task<Void, Never>?
+    private var cloudJournalSummarySyncTasks: [String: Task<Void, Never>] = [:]
+    private var cloudJournalDeletionSyncTasks: [String: Task<Void, Never>] = [:]
+    private var cloudJournalDeletionBulkSyncTask: Task<Void, Never>?
+    private var cloudJournalBulkSyncTask: Task<Void, Never>?
+    private var cloudProfileSyncTask: Task<Void, Never>?
+    private var cloudSubscriptionSyncTask: Task<Void, Never>?
+    private var cloudJournalInsightSyncTask: Task<Void, Never>?
+    private var cloudGardenSyncTask: Task<Void, Never>?
+    private var cloudRestoreTask: Task<Void, Never>?
 
     init() {
-        if FirebaseApp.app() == nil {
-            FirebaseApp.configure()
-        }
         restorePersistedState()
         bindStoreChanges()
+        startNetworkMonitoring()
+    }
+
+    deinit {
+        networkMonitor.cancel()
+    }
+
+    private func startNetworkMonitoring() {
+        networkMonitor.pathUpdateHandler = { [weak self] path in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let isAvailable = path.status == .satisfied
+                let wasUnavailable = !self.isNetworkAvailable
+                self.isNetworkAvailable = isAvailable
+                if wasUnavailable && isAvailable {
+                    self.syncPendingCloudWorkAfterReconnect()
+                }
+            }
+        }
+        networkMonitor.start(queue: networkMonitorQueue)
     }
 
     private func bindStoreChanges() {
@@ -2334,7 +2975,10 @@ final class AppState: ObservableObject {
             .sink { [weak self] _ in self?.storeDidChange() }
             .store(in: &cancellables)
         gardenStore.objectWillChange
-            .sink { [weak self] _ in self?.storeDidChange() }
+            .sink { [weak self] _ in
+                self?.storeDidChange()
+                self?.scheduleGardenCloudSync()
+            }
             .store(in: &cancellables)
         followUpStore.objectWillChange
             .sink { [weak self] _ in self?.storeDidChange() }
@@ -2352,15 +2996,27 @@ final class AppState: ObservableObject {
             .sink { [weak self] _ in self?.storeDidChange() }
             .store(in: &cancellables)
         profileStore.objectWillChange
-            .sink { [weak self] _ in self?.storeDidChange() }
+            .sink { [weak self] _ in
+                self?.storeDidChange()
+                self?.scheduleUserProfileCloudSync()
+            }
             .store(in: &cancellables)
         accountStore.objectWillChange
-            .sink { [weak self] _ in self?.storeDidChange() }
+            .sink { [weak self] _ in
+                self?.storeDidChange()
+                self?.scheduleUserProfileCloudSync()
+            }
             .store(in: &cancellables)
         subscriptionStore.objectWillChange
-            .sink { [weak self] _ in self?.storeDidChange() }
+            .sink { [weak self] _ in
+                self?.storeDidChange()
+                self?.scheduleSubscriptionCloudSync()
+            }
             .store(in: &cancellables)
         firebaseBackend.objectWillChange
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &cancellables)
+        revenueCatService.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
 
@@ -2374,6 +3030,7 @@ final class AppState: ObservableObject {
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard let self else { return }
             await self.refreshNotificationStateOnLaunch()
+            await self.refreshRevenueCatSubscription()
         }
     }
 
@@ -2384,10 +3041,11 @@ final class AppState: ObservableObject {
 
     private func restorePersistedState() {
         guard let state = persistenceService.load() else { return }
-        chatStore.restore(state.chatSessions)
-        journalStore.restore(state.journalEntries)
+        chatStore.restore(state.chatSessions, deletionTombstones: state.therapySessionDeletionTombstones)
+        journalStore.restore(state.journalEntries, deletionTombstones: state.journalDeletionTombstones)
         journalInsightStore.restore(state.journalInsights)
         gardenStore.restore(state.garden)
+        backfillJournalMemoryPlants()
         followUpStore.restore(state.followUps)
         healthDataStore.restore(state.health)
         jitaiStore.restore(state.jitai)
@@ -2408,9 +3066,8 @@ final class AppState: ObservableObject {
     }
 
     private func savePersistedState() {
-        do {
-            try persistenceService.save(snapshot())
-        } catch {
+        let state = snapshot()
+        persistenceService.saveAsync(state) { error in
             print("Lumia persistence save failed: \(error.localizedDescription)")
         }
     }
@@ -2438,7 +3095,9 @@ final class AppState: ObservableObject {
     private func snapshot() -> LuminaPersistedState {
         LuminaPersistedState(
             chatSessions: chatStore.chatSessions,
+            therapySessionDeletionTombstones: chatStore.deletionTombstones,
             journalEntries: journalStore.entries,
+            journalDeletionTombstones: journalStore.deletionTombstones,
             garden: gardenStore.snapshot(),
             followUps: followUpStore.followUps,
             health: healthDataStore.snapshot(),
@@ -2457,15 +3116,28 @@ final class AppState: ObservableObject {
     @Published var selectedTab: Int = 0
     @Published var activeTherapist: Therapist = allTherapists[0]
     @Published private(set) var pendingTherapyTherapistID: String?
+    @Published private(set) var pendingTherapySessionID: String?
 
     func requestTherapy(with therapist: Therapist) {
         activeTherapist = therapist
         pendingTherapyTherapistID = therapist.id
+        pendingTherapySessionID = nil
+        selectedTab = 2
+    }
+
+    func requestTherapy(session: ChatSession) {
+        let therapistID = session.therapistID == session.id ? session.id : session.therapistID
+        if let therapist = allTherapists.first(where: { $0.id == therapistID }) {
+            activeTherapist = therapist
+        }
+        pendingTherapyTherapistID = nil
+        pendingTherapySessionID = session.id
         selectedTab = 2
     }
 
     func consumePendingTherapyRequest() {
         pendingTherapyTherapistID = nil
+        pendingTherapySessionID = nil
     }
 
     func handleNotificationNavigation(_ request: NotificationNavigationRequest) {
@@ -2506,39 +3178,48 @@ final class AppState: ObservableObject {
 
     func saveSession(_ session: ChatSession, publish: ChatSessionPublishMode = .deferred) {
         chatStore.saveSession(session, publish: publish)
+        scheduleLocalSaveIfSilent(publish)
         syncTherapySessionToCloud(session)
     }
 
     func saveSessions(_ sessions: [ChatSession], publish: ChatSessionPublishMode = .deferred) {
         chatStore.saveSessions(sessions, publish: publish)
+        scheduleLocalSaveIfSilent(publish)
         sessions.forEach(syncTherapySessionToCloud)
     }
 
     func clearSession(for therapist: Therapist, publish: ChatSessionPublishMode = .deferred) {
-        let sessionIDs = chatStore.sessions(for: therapist).map(\.id)
-        chatStore.clearSession(for: therapist, publish: publish)
-        deleteTherapySessionsFromCloud(ids: sessionIDs)
+        let tombstones = chatStore.clearSession(for: therapist, publish: publish)
+        scheduleLocalSaveIfSilent(publish)
+        syncTherapySessionDeletionsToCloud(tombstones)
     }
 
     func deleteSession(id: String, publish: ChatSessionPublishMode = .deferred) {
-        chatStore.deleteSession(id: id, publish: publish)
-        deleteTherapySessionsFromCloud(ids: [id])
+        guard let tombstone = chatStore.deleteSession(id: id, publish: publish) else { return }
+        scheduleLocalSaveIfSilent(publish)
+        syncTherapySessionDeletionToCloud(tombstone)
     }
 
     func archiveSession(id: String, publish: ChatSessionPublishMode = .deferred) {
         guard let session = chatStore.archiveSession(id: id, publish: publish) else { return }
+        scheduleLocalSaveIfSilent(publish)
         syncTherapySessionToCloud(session)
     }
 
     func clearAllChatSessions(publish: ChatSessionPublishMode = .deferred) {
-        let sessionIDs = Array(chatStore.chatSessions.keys)
-        chatStore.clearAllChatSessions(publish: publish)
-        deleteTherapySessionsFromCloud(ids: sessionIDs)
+        let tombstones = chatStore.clearAllChatSessions(publish: publish)
+        scheduleLocalSaveIfSilent(publish)
+        syncTherapySessionDeletionsToCloud(tombstones)
         evaluationStore.recordSafetyEvent(
             kind: .userControlAction,
             riskLevel: .none,
             reasonCodes: ["control.clear_chat_history"]
         )
+    }
+
+    private func scheduleLocalSaveIfSilent(_ publish: ChatSessionPublishMode) {
+        guard publish == .silent else { return }
+        schedulePersistedStateSave()
     }
 
     // MARK: - Journal Entries
@@ -2552,27 +3233,46 @@ final class AppState: ObservableObject {
         journalStore.averageSentiment
     }
 
+    private func backfillJournalMemoryPlants(limit: Int = 8) {
+        let recentEntries = journalStore.entries
+            .filter { !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .sorted { $0.timestamp > $1.timestamp }
+            .prefix(limit)
+        for entry in recentEntries {
+            gardenStore.upsertJournalMemoryPlant(for: entry)
+        }
+    }
+
     func addEntry(_ entry: JournalEntry) {
         journalStore.addEntry(entry)
+        gardenStore.upsertJournalMemoryPlant(for: entry)
         refreshJITAI()
+        syncJournalSummaryToCloud(entry)
         syncTherapyContextToCloud(for: nil)
     }
 
     func updateEntry(_ entry: JournalEntry) {
         journalStore.updateEntry(entry)
+        gardenStore.upsertJournalMemoryPlant(for: entry)
         refreshJITAI()
+        syncJournalSummaryToCloud(entry)
         syncTherapyContextToCloud(for: nil)
     }
 
     func deleteEntry(id: String) {
-        journalStore.deleteEntry(id: id)
+        let tombstone = journalStore.deleteEntry(id: id)
+        gardenStore.removeJournalMemoryPlant(entryID: id)
         refreshJITAI()
+        syncJournalDeletionToCloud(tombstone)
         syncTherapyContextToCloud(for: nil)
     }
 
     func toggleEntryPin(id: String) {
         journalStore.togglePin(id: id)
         refreshJITAI()
+        if let entry = journalStore.entries.first(where: { $0.id == id }) {
+            syncJournalSummaryToCloud(entry)
+        }
         syncTherapyContextToCloud(for: nil)
     }
 
@@ -2585,12 +3285,12 @@ final class AppState: ObservableObject {
         let userMessages = meaningfulMessages.filter { $0.role == .user }.suffix(3).map(\.text)
         let modelMessages = meaningfulMessages.filter { $0.role == .model }.suffix(2).map(\.text)
         let content = """
-        Therapy session with \(therapist.name).
+        # Therapy with \(therapist.name)
 
-        What I brought:
+        ## What I brought
         \(userMessages.map { "- \($0)" }.joined(separator: "\n"))
 
-        What felt useful:
+        ## What felt useful
         \(modelMessages.map { "- \($0)" }.joined(separator: "\n"))
         """
         let summary = "Saved from Therapy with \(therapist.name)."
@@ -2611,6 +3311,8 @@ final class AppState: ObservableObject {
             therapyMemoryPolicy: .included
         )
         journalStore.addEntry(entry)
+        gardenStore.upsertJournalMemoryPlant(for: entry)
+        syncJournalSummaryToCloud(entry)
         syncTherapyContextToCloud(for: therapist)
     }
 
@@ -2620,9 +3322,13 @@ final class AppState: ObservableObject {
 
     func saveDailyJournalInsights(_ insights: DailyJournalInsights) {
         journalInsightStore.save(insights)
+        syncDailyJournalInsightsToCloud(insights)
     }
 
     func clearDailyJournalInsights() {
+        if let dateKey = journalInsightStore.dailyInsight?.dateKey {
+            deleteDailyJournalInsightsFromCloud(dateKey: dateKey)
+        }
         journalInsightStore.clear()
     }
 
@@ -2667,9 +3373,9 @@ final class AppState: ObservableObject {
         set { gardenStore.gardenDecorations = newValue }
     }
 
-    var claimedGardenQuestIDs: Set<String> {
-        get { gardenStore.claimedGardenQuestIDs }
-        set { gardenStore.claimedGardenQuestIDs = newValue }
+    var keptGardenPromptIDs: Set<String> {
+        get { gardenStore.keptGardenPromptIDs }
+        set { gardenStore.keptGardenPromptIDs = newValue }
     }
 
     var therapyMicroPlans: [MicroPlan] {
@@ -2682,9 +3388,9 @@ final class AppState: ObservableObject {
         set { gardenStore.forageItems = newValue }
     }
 
-    var gardenDailyEvents: [GardenDailyEvent] {
-        get { gardenStore.dailyEvents }
-        set { gardenStore.dailyEvents = newValue }
+    var gardenVisitorInvitations: [GardenVisitorInvitation] {
+        get { gardenStore.visitorInvitations }
+        set { gardenStore.visitorInvitations = newValue }
     }
 
     var gardenKeepsakes: [GardenKeepsake] {
@@ -2707,14 +3413,20 @@ final class AppState: ObservableObject {
         set { gardenStore.areaMilestones = newValue }
     }
 
-    var activeGardenDailyEvent: GardenDailyEvent? {
-        gardenStore.activeDailyEvent()
+    var activeGardenVisitorInvitation: GardenVisitorInvitation? {
+        gardenStore.activeVisitorInvitation()
+    }
+
+    func isGardenHabitCompletedToday(_ habit: Habit) -> Bool {
+        gardenStore.isHabitCompletedToday(habit)
     }
 
     func completeHabit(id: String) {
-        let wasCompleted = gardenStore.habit(id: id)?.completedAt != nil
+        let wasCompletedToday = gardenStore.habit(id: id).map { gardenStore.isHabitCompletedToday($0) } ?? false
         gardenStore.completeHabit(id: id)
-        if !wasCompleted,
+        let isCompletedToday = gardenStore.habit(id: id).map { gardenStore.isHabitCompletedToday($0) } ?? false
+        if !wasCompletedToday,
+           isCompletedToday,
            let microPlanID = gardenStore.habit(id: id)?.sourceMicroPlanID {
             followUpStore.record(microPlanID: microPlanID, status: .completed)
         }
@@ -2726,51 +3438,58 @@ final class AppState: ObservableObject {
         refreshJITAI()
     }
 
-    func canPlaceGardenDecoration(_ type: GardenDecorationType) -> Bool {
-        gardenStore.canPlaceGardenDecoration(type)
+    func canArrangeGardenDecoration(_ type: GardenDecorationType) -> Bool {
+        gardenStore.canArrangeGardenDecoration(type)
     }
 
     @discardableResult
-    func placeGardenDecoration(type: GardenDecorationType, anchorHabitID: String, x: Double, y: Double) -> Bool {
-        gardenStore.placeGardenDecoration(type: type, anchorHabitID: anchorHabitID, x: x, y: y)
+    func arrangeGardenDecoration(type: GardenDecorationType, anchorHabitID: String, x: Double, y: Double) -> Bool {
+        gardenStore.arrangeGardenDecoration(type: type, anchorHabitID: anchorHabitID, x: x, y: y)
     }
 
     @discardableResult
-    func claimGardenQuest(id: String, reward: Int) -> Bool {
-        gardenStore.claimGardenQuest(id: id, reward: reward)
+    func touchGardenPrompt(id: String, dewAmount: Int) -> Bool {
+        gardenStore.touchGardenPrompt(id: id, dewAmount: dewAmount)
     }
 
     func refreshGardenForage(now: Date = Date()) {
-        gardenStore.refreshDailyForage(now: now)
+        gardenStore.refreshAmbientForage(now: now)
     }
 
     @discardableResult
-    func claimGardenForageItem(id: String) -> GardenForageItem? {
-        gardenStore.claimForageItem(id: id)
+    func gatherGardenForageItem(id: String) -> GardenForageItem? {
+        gardenStore.gatherForageItem(id: id)
     }
 
-    func refreshGardenDailyEvent(now: Date = Date()) {
-        gardenStore.refreshDailyEvent(now: now)
-    }
-
-    @discardableResult
-    func acceptGardenDailyEvent(id: String) -> GardenDailyEvent? {
-        gardenStore.acceptDailyEvent(id: id)
+    func refreshGardenVisitorInvitation(now: Date = Date()) {
+        gardenStore.refreshVisitorInvitation(now: now)
     }
 
     @discardableResult
-    func completeGardenDailyEvent(id: String, progress: Int) -> GardenDailyEvent? {
-        gardenStore.completeDailyEvent(id: id, progress: progress)
+    func acceptGardenVisitorInvitation(id: String) -> GardenVisitorInvitation? {
+        gardenStore.acceptVisitorInvitation(id: id)
     }
 
     @discardableResult
-    func dismissGardenDailyEvent(id: String) -> GardenDailyEvent? {
-        gardenStore.dismissDailyEvent(id: id)
+    func settleGardenVisitorInvitation(id: String, progress: Int) -> GardenVisitorInvitation? {
+        gardenStore.settleVisitorInvitation(id: id, progress: progress)
+    }
+
+    @discardableResult
+    func dismissGardenVisitorInvitation(id: String) -> GardenVisitorInvitation? {
+        gardenStore.dismissVisitorInvitation(id: id)
     }
 
     @discardableResult
     func completeGardenMapAreaVisit(area: GardenMapAreaKind) -> GardenAreaActionResult? {
         gardenStore.completeMapAreaVisit(area: area)
+    }
+
+    @discardableResult
+    func plantStarterGardenRoutine(title: String, description: String) -> Habit? {
+        let habit = gardenStore.plantStarterRoutine(title: title, description: description)
+        refreshJITAI()
+        return habit
     }
 
     @discardableResult
@@ -2801,7 +3520,7 @@ final class AppState: ObservableObject {
     func recordFollowUp(id: String, status: FollowUpStatus) -> FollowUp? {
         guard let followUp = followUpStore.record(id: id, status: status) else { return nil }
         if status == .completed, let habitID = followUp.habitID {
-            gardenStore.completeHabitIfNeeded(id: habitID, reward: 3)
+            gardenStore.completeHabitIfNeeded(id: habitID, dewAmount: 3)
         }
         evaluationStore.recordIntervention(
             source: .followUp,
@@ -2908,6 +3627,7 @@ final class AppState: ObservableObject {
     }
 
     func therapyContextBrief(for therapist: Therapist?) -> String? {
+        guard subscriptionStore.canUse(.advancedMemory) else { return nil }
         let journalContext: String?
         guard profileStore.useJournalContextInTherapy else {
             let snapshot = WellbeingContextEngine.make(
@@ -2932,6 +3652,7 @@ final class AppState: ObservableObject {
     }
 
     func therapyContextBrief(for therapist: Therapist, excluding sessionID: String?) -> String? {
+        guard subscriptionStore.canUse(.advancedMemory) else { return nil }
         let journalContext = profileStore.useJournalContextInTherapy
             ? wellbeingContext(for: therapist).therapyPromptBrief
             : WellbeingContextEngine.make(
@@ -2962,34 +3683,36 @@ final class AppState: ObservableObject {
         guard !priorSessions.isEmpty else { return nil }
 
         var lines = [
-            "Continuity memory for \(therapist.name):",
-            "- You are the same \(therapist.name) the user spoke with before. Maintain your own voice and role; do not present yourself as generic Lumia."
+            "Conversation continuity for \(therapist.name):",
+            "- The user has met this guide before. Stay in \(therapist.name)'s voice and continue gently, without sounding like a system recalling data."
         ]
 
         for session in priorSessions {
             let userTexts = session.messages
                 .filter { $0.role == .user && !$0.isThinking }
-                .suffix(2)
-                .map { Self.compactTherapyMemoryText($0.text, limit: 130) }
+                .suffix(3)
+                .compactMap { Self.safeTherapyMemoryFocus($0.text, for: therapist) }
+                .prefix(2)
             let modelTexts = session.messages
                 .filter { $0.role == .model && !$0.isThinking }
                 .suffix(1)
                 .map { Self.compactTherapyMemoryText($0.text, limit: 130) }
             let date = Date(timeIntervalSince1970: session.lastUpdated).formatted(.dateTime.month(.abbreviated).day())
             if !userTexts.isEmpty {
-                lines.append("- \(date), user brought: \(userTexts.joined(separator: " / "))")
+                lines.append("- \(date), previous user thread: \(userTexts.joined(separator: " / "))")
             }
             if let lastGuidance = modelTexts.first, !lastGuidance.isEmpty {
-                lines.append("- \(therapist.name) last offered: \(lastGuidance)")
+                lines.append("- Prior \(therapist.name) response leaned toward: \(lastGuidance)")
             }
         }
 
-        lines.append("- Use this memory lightly. Mention prior work only when it helps, and let the user correct it.")
+        lines.append("- Use this memory quietly. If you mention it, say it as an invitation, not a fact the user must accept.")
         return lines.joined(separator: "\n")
     }
 
     func hasTherapistMemory(for therapist: Therapist, excluding sessionID: String? = nil) -> Bool {
-        chatStore.sessions(for: therapist)
+        guard subscriptionStore.canUse(.advancedMemory) else { return false }
+        return chatStore.sessions(for: therapist)
             .contains { $0.id != sessionID && $0.messageCount >= 3 }
     }
 
@@ -3003,6 +3726,7 @@ final class AppState: ObservableObject {
     }
 
     func therapyContextReasonCodes(for therapist: Therapist?) -> [String] {
+        guard subscriptionStore.canUse(.advancedMemory) else { return [] }
         guard profileStore.useJournalContextInTherapy else {
             return wellbeingContext.therapyReasonCodes.filter { !$0.hasPrefix("journal.") }
         }
@@ -3022,21 +3746,18 @@ final class AppState: ObservableObject {
     }
 
     func isUsingJournalContext(for therapist: Therapist) -> Bool {
+        guard subscriptionStore.canUse(.advancedMemory) else { return false }
         guard profileStore.useJournalContextInTherapy else { return false }
         return wellbeingContext(for: therapist).journalBridge?.isEmpty == false
     }
 
     func personalizedTherapyOpening(for therapist: Therapist) -> String? {
-        if let memory = therapistMemoryBrief(for: therapist),
-           let previousFocus = memory
-            .components(separatedBy: "\n")
-            .first(where: { $0.contains("user brought:") })?
-            .replacingOccurrences(of: #"^- [A-Za-z]{3} \d{1,2}, user brought: "#, with: "", options: .regularExpression) {
-            let focus = Self.compactTherapyMemoryText(previousFocus, limit: 96)
+        guard subscriptionStore.canUse(.advancedMemory) else { return nil }
+        if let focus = therapistMemoryOpeningFocus(for: therapist) {
             return """
             \(therapist.greeting)
 
-            Welcome back. I remember we were near \(focus). We can continue there, or start with what feels most present today.
+            Welcome back. I remember we were working with \(focus). We can pick up that thread if it still fits, or start with what feels most present today.
             """
         }
 
@@ -3048,18 +3769,101 @@ final class AppState: ObservableObject {
         let base: String
         switch therapist.id {
         case "willow":
-            base = theme.map { "The recent notes seem to circle around \($0). We can turn that into one small, workable step, or start somewhere else." } ?? "We can look for one clear next step, or begin fresh."
+            base = theme.map { "There may be a recent thread around \($0). We can make it concrete, or leave it aside and start fresh." } ?? "We can look for one clear next step, or begin fresh."
         case "serena":
-            base = theme.map { "The recent notes suggest \($0) may be carrying some weight. We can stay with the feeling gently, or start anywhere you like." } ?? "We can begin with what you feel right now."
+            base = theme.map { "\($0) may be carrying some weight lately. We can stay close to the feeling, or begin anywhere you like." } ?? "We can begin with what you feel right now."
         case "eden":
-            base = theme.map { "The recent notes point toward \($0). If it fits, we can look at the relationship side gently, or choose a different place to begin." } ?? "We can look at connection patterns, or begin fresh."
+            base = theme.map { "There may be something to notice around \($0). If it fits, we can look at the relationship side gently." } ?? "We can look at connection patterns, or begin fresh."
         case "nimbus":
-            base = theme.map { "The recent notes suggest \($0) may be present. We can start with grounding first, or talk through what is here." } ?? "We can keep this low-pressure, or simply start with your breath."
+            base = theme.map { "\($0) may be present lately. We can start with grounding first, or simply talk through what is here." } ?? "We can keep this low-pressure, or simply start with your breath."
         default:
-            base = theme.map { "The recent notes mention \($0). We can start there if useful, or begin somewhere else." } ?? "We can start fresh."
+            base = theme.map { "There may be a recent thread around \($0). We can start there only if it feels useful." } ?? "We can start fresh."
         }
 
         return "\(therapist.greeting)\n\n\(base)"
+    }
+
+    private func therapistMemoryOpeningFocus(for therapist: Therapist) -> String? {
+        chatStore.sessions(for: therapist)
+            .filter { $0.messageCount >= 3 }
+            .sorted { $0.lastUpdated > $1.lastUpdated }
+            .prefix(3)
+            .flatMap { session in
+                session.messages
+                    .filter { $0.role == .user && !$0.isThinking }
+                    .suffix(4)
+                    .compactMap { Self.safeTherapyMemoryFocus($0.text, for: therapist) }
+            }
+            .first
+    }
+
+    private static func safeTherapyMemoryFocus(_ rawFocus: String, for therapist: Therapist) -> String? {
+        let fragments = rawFocus
+            .components(separatedBy: CharacterSet(charactersIn: "/\n"))
+            .map { compactTherapyMemoryText($0, limit: 84) }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)) }
+            .filter { !$0.isEmpty }
+
+        for compact in fragments {
+            if let candidate = safeTherapyMemoryFragment(compact, for: therapist) {
+                return candidate
+            }
+        }
+
+        return nil
+    }
+
+    private static func safeTherapyMemoryFragment(_ rawFocus: String, for therapist: Therapist) -> String? {
+        var compact = rawFocus
+            .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        guard compact.count >= 4 else { return nil }
+
+        var normalized = compact.lowercased()
+        let blockedExact: Set<String> = [
+            "hi",
+            "hello",
+            "hey",
+            "你好",
+            "您好",
+            "嗨",
+            "哈喽",
+            "在吗",
+            "ok",
+            "okay"
+        ]
+        guard !blockedExact.contains(normalized) else { return nil }
+
+        let greetingFragments = [
+            "hi",
+            "hello",
+            "hey",
+            "你好",
+            "您好",
+            "嗨",
+            "哈喽"
+        ]
+        for greeting in greetingFragments where normalized.hasPrefix(greeting) {
+            compact = String(compact.dropFirst(greeting.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+            normalized = compact.lowercased()
+            break
+        }
+        guard compact.count >= 4, !blockedExact.contains(normalized) else { return nil }
+
+        let blockedContains = [
+            therapist.id.lowercased(),
+            therapist.name.lowercased(),
+            therapist.name.replacingOccurrences(of: "Dr. ", with: "").lowercased(),
+            "dr willow",
+            "doctor",
+            "therapy",
+            "therapist"
+        ]
+        guard !blockedContains.contains(where: { !$0.isEmpty && normalized.contains($0) }) else {
+            return nil
+        }
+
+        return compact
     }
 
     private func safeJournalTheme(_ theme: String?, for therapist: Therapist) -> String? {
@@ -3305,6 +4109,16 @@ final class AppState: ObservableObject {
         set { profileStore.userBio = newValue }
     }
 
+    var profileAvatarID: ProfileAvatarID {
+        get { profileStore.avatarID }
+        set { profileStore.avatarID = newValue }
+    }
+
+    var profileGender: ProfileGender {
+        get { profileStore.gender }
+        set { profileStore.gender = newValue }
+    }
+
     var joinDate: Date {
         get { profileStore.joinDate }
         set { profileStore.joinDate = newValue }
@@ -3524,6 +4338,7 @@ final class AppState: ObservableObject {
             phone: user.phoneNumber
         )
         applyAccountProfile(account)
+        await refreshRevenueCatSubscription()
         return account
     }
 
@@ -3538,6 +4353,7 @@ final class AppState: ObservableObject {
             phone: user.phoneNumber
         )
         applyAccountProfile(account)
+        await refreshRevenueCatSubscription()
         return account
     }
 
@@ -3546,6 +4362,7 @@ final class AppState: ObservableObject {
         guard password == confirmPassword else { throw LuminaAuthError.passwordMismatch }
         let account = try accountStore.registerPhone(displayName: displayName, phone: phone, password: password)
         applyAccountProfile(account)
+        Task { @MainActor [weak self] in await self?.refreshRevenueCatSubscription() }
         return account
     }
 
@@ -3553,18 +4370,26 @@ final class AppState: ObservableObject {
     func signInWithPhone(phone: String, password: String) throws -> LuminaAccount {
         let account = try accountStore.signInPhone(phone: phone, password: password)
         applyAccountProfile(account)
+        Task { @MainActor [weak self] in await self?.refreshRevenueCatSubscription() }
         return account
     }
 
     @discardableResult
-    func signInWithApple(providerUserID: String, displayName: String?, email: String?) throws -> LuminaAccount {
-        let account = try accountStore.signInFederated(
+    func signInWithApple(idToken: String, rawNonce: String, fullName: PersonNameComponents?, email: String?) async throws -> LuminaAccount {
+        let user = try await firebaseBackend.signInApple(idToken: idToken, rawNonce: rawNonce, fullName: fullName)
+        let fallbackDisplayName = fullName.flatMap { components -> String? in
+            let name = PersonNameComponentsFormatter().string(from: components).trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? nil : name
+        }
+        let account = try accountStore.signInRemoteAccount(
             provider: .apple,
-            providerUserID: providerUserID,
-            displayName: displayName,
-            email: email
+            providerUserID: user.uid,
+            displayName: user.displayName ?? fallbackDisplayName,
+            email: user.email ?? email,
+            phone: user.phoneNumber
         )
         applyAccountProfile(account)
+        await refreshRevenueCatSubscription()
         return account
     }
 
@@ -3579,12 +4404,14 @@ final class AppState: ObservableObject {
             phone: user.phoneNumber
         )
         applyAccountProfile(account)
+        await refreshRevenueCatSubscription()
         return account
     }
 
     func signOutAccount() {
         try? firebaseBackend.signOut()
         accountStore.signOut()
+        subscriptionStore.update(SubscriptionState())
     }
 
     private func startFirebaseAuthListener() {
@@ -3599,8 +4426,9 @@ final class AppState: ObservableObject {
                     phone: user.phoneNumber
                 )
                 self.applyAccountProfile(account)
-                self.restoreTherapySessionsFromCloud()
-                self.refreshSubscriptionFromCloud()
+                self.restoreCloudBackedState()
+                self.syncTherapyContextToCloud(for: nil)
+                Task { @MainActor [weak self] in await self?.refreshRevenueCatSubscription() }
             } catch {
                 print("Lumia Firebase auth sync failed: \(error.localizedDescription)")
             }
@@ -3611,44 +4439,141 @@ final class AppState: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                let subscription = try await self.firebaseBackend.fetchSubscriptionState()
-                self.subscriptionStore.update(subscription)
+                let subscription = try await self.firebaseBackend.fetchSubscriptionSnapshot()
+                self.subscriptionStore.restore(subscription)
+                await self.refreshRevenueCatSubscription()
             } catch {
                 print("Lumia subscription fetch failed: \(error.localizedDescription)")
             }
         }
     }
 
-    func applyLocalSubscriptionOverride(_ state: SubscriptionState) {
-        subscriptionStore.update(state)
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            do {
-                try await self.firebaseBackend.saveSubscriptionState(state)
-            } catch {
-                print("Lumia subscription sync failed: \(error.localizedDescription)")
-            }
-        }
+    var revenueCatPlans: [RevenueCatPlan] {
+        revenueCatService.plans
     }
 
-    private func restoreTherapySessionsFromCloud() {
-        Task { @MainActor [weak self] in
-            guard let self else { return }
+    var isMembershipLoading: Bool {
+        revenueCatService.isLoading
+    }
+
+    var membershipErrorMessage: String? {
+        revenueCatService.lastError
+    }
+
+    func refreshRevenueCatSubscription() async {
+        let state = await revenueCatService.refresh(appUserID: revenueCatAppUserID)
+        subscriptionStore.update(state)
+    }
+
+    func purchaseSubscriptionPlan(_ planID: String) async throws {
+        let state = try await revenueCatService.purchase(planID: planID, appUserID: revenueCatAppUserID)
+        subscriptionStore.update(state)
+    }
+
+    func restoreRevenueCatPurchases() async throws {
+        let state = try await revenueCatService.restorePurchases(appUserID: revenueCatAppUserID)
+        subscriptionStore.update(state)
+    }
+
+    func applyLocalSubscriptionOverride(_ state: SubscriptionState) {
+        subscriptionStore.update(state)
+        scheduleSubscriptionCloudSync(delay: 100_000_000)
+    }
+
+    private var revenueCatAppUserID: String? {
+        firebaseBackend.currentUser?.uid ?? accountStore.currentAccount?.id
+    }
+
+    private func restoreCloudBackedState() {
+        cloudRestoreTask?.cancel()
+        cloudRestoreTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled, let self else { return }
+
+            do {
+                if let profile = try await self.firebaseBackend.fetchAppProfile() {
+                    self.profileStore.restore(profile)
+                    if let account = self.accountStore.currentAccount {
+                        self.applyAccountProfile(account)
+                    }
+                }
+            } catch {
+                print("Lumia profile cloud fetch failed: \(error.localizedDescription)")
+            }
+
+            do {
+                let remoteSessionDeletions = try await self.firebaseBackend.fetchTherapySessionDeletions()
+                self.chatStore.mergeCloudDeletions(remoteSessionDeletions)
+            } catch {
+                print("Lumia therapy deletion cloud fetch failed: \(error.localizedDescription)")
+            }
+
             do {
                 let remoteSessions = try await self.firebaseBackend.fetchTherapySessions()
-                guard !remoteSessions.isEmpty else { return }
-                self.chatStore.saveSessions(remoteSessions, publish: .deferred)
+                if !remoteSessions.isEmpty {
+                    self.chatStore.saveSessions(remoteSessions, publish: .deferred)
+                }
             } catch {
                 print("Lumia therapy cloud fetch failed: \(error.localizedDescription)")
             }
+
+            do {
+                let remoteDeletions = try await self.firebaseBackend.fetchJournalDeletions()
+                self.journalStore.mergeCloudDeletions(remoteDeletions)
+            } catch {
+                print("Lumia journal deletion cloud fetch failed: \(error.localizedDescription)")
+            }
+
+            do {
+                let remoteSummaries = try await self.firebaseBackend.fetchJournalSummaries()
+                self.journalStore.mergeCloudSummaries(remoteSummaries)
+            } catch {
+                print("Lumia journal summary cloud fetch failed: \(error.localizedDescription)")
+            }
+
+            do {
+                let insight = try await self.firebaseBackend.fetchLatestDailyJournalInsights()
+                self.journalInsightStore.mergeCloudInsight(insight)
+            } catch {
+                print("Lumia journal insight cloud fetch failed: \(error.localizedDescription)")
+            }
+
+            do {
+                if let remoteGarden = try await self.firebaseBackend.fetchGardenState() {
+                    self.gardenStore.mergeCloudState(remoteGarden)
+                }
+                self.backfillJournalMemoryPlants()
+            } catch {
+                print("Lumia garden cloud fetch failed: \(error.localizedDescription)")
+            }
+
+            do {
+                let subscription = try await self.firebaseBackend.fetchSubscriptionSnapshot()
+                self.subscriptionStore.restore(subscription)
+            } catch {
+                print("Lumia subscription fetch failed: \(error.localizedDescription)")
+            }
+
+            self.savePersistedState()
+            self.scheduleUserProfileCloudSync(delay: 250_000_000)
+            self.syncPendingTherapySessionDeletionsToCloud()
+            self.syncPendingJournalDeletionsToCloud()
+            self.scheduleAllJournalSummariesCloudSync()
+            self.scheduleGardenCloudSync(delay: 450_000_000)
+            self.scheduleSubscriptionCloudSync(delay: 450_000_000)
+            self.cloudRestoreTask = nil
         }
     }
 
     private func syncTherapySessionToCloud(_ session: ChatSession) {
         cloudSessionSyncTasks[session.id]?.cancel()
         cloudSessionSyncTasks[session.id] = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 700_000_000)
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
             guard !Task.isCancelled, let self else { return }
+            guard self.canAttemptCloudSync else {
+                self.cloudSessionSyncTasks[session.id] = nil
+                return
+            }
             do {
                 try await self.firebaseBackend.saveTherapySession(session)
             } catch {
@@ -3658,10 +4583,68 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func syncTherapySessionDeletionToCloud(_ tombstone: TherapySessionDeletionTombstone) {
+        syncTherapySessionDeletionsToCloud([tombstone])
+    }
+
+    private func syncTherapySessionDeletionsToCloud(_ tombstones: [TherapySessionDeletionTombstone]) {
+        guard !tombstones.isEmpty else { return }
+        tombstones.forEach {
+            cloudSessionSyncTasks[$0.id]?.cancel()
+            cloudSessionDeletionSyncTasks[$0.id]?.cancel()
+        }
+        tombstones.forEach { tombstone in
+            cloudSessionDeletionSyncTasks[tombstone.id] = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                guard !Task.isCancelled, let self else { return }
+                guard self.canAttemptCloudSync else {
+                    self.cloudSessionDeletionSyncTasks[tombstone.id] = nil
+                    self.cloudSessionSyncTasks[tombstone.id] = nil
+                    return
+                }
+                do {
+                    try await self.firebaseBackend.saveTherapySessionDeletion(tombstone)
+                    try await self.firebaseBackend.deleteTherapySession(id: tombstone.id)
+                } catch {
+                    print("Lumia therapy deletion cloud sync failed: \(error.localizedDescription)")
+                }
+                self.cloudSessionDeletionSyncTasks[tombstone.id] = nil
+                self.cloudSessionSyncTasks[tombstone.id] = nil
+            }
+        }
+    }
+
+    private func syncPendingTherapySessionDeletionsToCloud() {
+        cloudSessionDeletionBulkSyncTask?.cancel()
+        cloudSessionDeletionBulkSyncTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled, let self else { return }
+            let tombstones = self.chatStore.deletionTombstones
+            guard !tombstones.isEmpty else {
+                self.cloudSessionDeletionBulkSyncTask = nil
+                return
+            }
+            guard self.canAttemptCloudSync else {
+                self.cloudSessionDeletionBulkSyncTask = nil
+                return
+            }
+            do {
+                try await self.firebaseBackend.saveTherapySessionDeletions(tombstones)
+                for tombstone in tombstones {
+                    try await self.firebaseBackend.deleteTherapySession(id: tombstone.id)
+                }
+            } catch {
+                print("Lumia pending therapy deletion sync failed: \(error.localizedDescription)")
+            }
+            self.cloudSessionDeletionBulkSyncTask = nil
+        }
+    }
+
     func syncTherapyContextToCloud(for therapist: Therapist?) {
         let snapshot = wellbeingContext(for: therapist)
         Task { @MainActor [weak self] in
             guard let self else { return }
+            guard self.canAttemptCloudSync else { return }
             do {
                 try await self.firebaseBackend.saveTherapyContext(snapshot, therapistID: therapist?.id)
             } catch {
@@ -3670,20 +4653,191 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func deleteTherapySessionsFromCloud(ids: [String]) {
-        guard !ids.isEmpty else { return }
-        ids.forEach { cloudSessionSyncTasks[$0]?.cancel() }
+    private func syncJournalSummaryToCloud(_ entry: JournalEntry) {
+        cloudJournalSummarySyncTasks[entry.id]?.cancel()
+        cloudJournalSummarySyncTasks[entry.id] = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 650_000_000)
+            guard !Task.isCancelled, let self else { return }
+            guard self.canAttemptCloudSync else {
+                self.cloudJournalSummarySyncTasks[entry.id] = nil
+                return
+            }
+            do {
+                try await self.firebaseBackend.saveJournalSummary(entry)
+            } catch {
+                print("Lumia journal summary cloud sync failed: \(error.localizedDescription)")
+            }
+            self.cloudJournalSummarySyncTasks[entry.id] = nil
+        }
+    }
+
+    private func scheduleAllJournalSummariesCloudSync() {
+        cloudJournalBulkSyncTask?.cancel()
+        cloudJournalBulkSyncTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            guard !Task.isCancelled, let self else { return }
+            guard self.canAttemptCloudSync else {
+                self.cloudJournalBulkSyncTask = nil
+                return
+            }
+            do {
+                try await self.firebaseBackend.saveJournalSummaries(self.journalStore.entries)
+            } catch {
+                print("Lumia journal summaries cloud sync failed: \(error.localizedDescription)")
+            }
+            self.cloudJournalBulkSyncTask = nil
+        }
+    }
+
+    private func syncJournalDeletionToCloud(_ tombstone: JournalDeletionTombstone) {
+        cloudJournalSummarySyncTasks[tombstone.id]?.cancel()
+        cloudJournalDeletionSyncTasks[tombstone.id]?.cancel()
+        cloudJournalDeletionSyncTasks[tombstone.id] = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled, let self else { return }
+            guard self.canAttemptCloudSync else {
+                self.cloudJournalDeletionSyncTasks[tombstone.id] = nil
+                self.cloudJournalSummarySyncTasks[tombstone.id] = nil
+                return
+            }
+            do {
+                try await self.firebaseBackend.saveJournalDeletion(tombstone)
+                try await self.firebaseBackend.deleteJournalSummary(id: tombstone.id)
+            } catch {
+                print("Lumia journal deletion cloud sync failed: \(error.localizedDescription)")
+            }
+            self.cloudJournalDeletionSyncTasks[tombstone.id] = nil
+            self.cloudJournalSummarySyncTasks[tombstone.id] = nil
+        }
+    }
+
+    private func syncPendingJournalDeletionsToCloud() {
+        cloudJournalDeletionBulkSyncTask?.cancel()
+        cloudJournalDeletionBulkSyncTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled, let self else { return }
+            let tombstones = self.journalStore.deletionTombstones
+            guard !tombstones.isEmpty else {
+                self.cloudJournalDeletionBulkSyncTask = nil
+                return
+            }
+            guard self.canAttemptCloudSync else {
+                self.cloudJournalDeletionBulkSyncTask = nil
+                return
+            }
+            do {
+                try await self.firebaseBackend.saveJournalDeletions(tombstones)
+                for tombstone in tombstones {
+                    try await self.firebaseBackend.deleteJournalSummary(id: tombstone.id)
+                }
+            } catch {
+                print("Lumia pending journal deletion sync failed: \(error.localizedDescription)")
+            }
+            self.cloudJournalDeletionBulkSyncTask = nil
+        }
+    }
+
+    private func syncPendingCloudWorkAfterReconnect() {
+        chatStore.chatSessions.values.forEach(syncTherapySessionToCloud)
+        syncPendingTherapySessionDeletionsToCloud()
+        syncPendingJournalDeletionsToCloud()
+        scheduleAllJournalSummariesCloudSync()
+        scheduleUserProfileCloudSync(delay: 250_000_000)
+        scheduleGardenCloudSync(delay: 450_000_000)
+        scheduleSubscriptionCloudSync(delay: 450_000_000)
+    }
+
+    private func syncDailyJournalInsightsToCloud(_ insights: DailyJournalInsights) {
+        cloudJournalInsightSyncTask?.cancel()
+        cloudJournalInsightSyncTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            guard !Task.isCancelled, let self else { return }
+            guard self.canAttemptCloudSync else {
+                self.cloudJournalInsightSyncTask = nil
+                return
+            }
+            do {
+                try await self.firebaseBackend.saveDailyJournalInsights(insights)
+            } catch {
+                print("Lumia journal insight cloud sync failed: \(error.localizedDescription)")
+            }
+            self.cloudJournalInsightSyncTask = nil
+        }
+    }
+
+    private func deleteDailyJournalInsightsFromCloud(dateKey: String) {
+        cloudJournalInsightSyncTask?.cancel()
         Task { @MainActor [weak self] in
             guard let self else { return }
-            for id in ids {
-                do {
-                    try await self.firebaseBackend.deleteTherapySession(id: id)
-                } catch {
-                    print("Lumia therapy cloud delete failed: \(error.localizedDescription)")
-                }
-                self.cloudSessionSyncTasks[id] = nil
+            guard self.canAttemptCloudSync else {
+                self.cloudJournalInsightSyncTask = nil
+                return
             }
+            do {
+                try await self.firebaseBackend.deleteDailyJournalInsights(dateKey: dateKey)
+            } catch {
+                print("Lumia journal insight cloud delete failed: \(error.localizedDescription)")
+            }
+            self.cloudJournalInsightSyncTask = nil
         }
+    }
+
+    private func scheduleUserProfileCloudSync(delay: UInt64 = 850_000_000) {
+        cloudProfileSyncTask?.cancel()
+        cloudProfileSyncTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled, let self else { return }
+            guard self.canAttemptCloudSync else {
+                self.cloudProfileSyncTask = nil
+                return
+            }
+            do {
+                try await self.firebaseBackend.saveAppProfile(self.profileStore.snapshot(), account: self.accountStore.currentAccount)
+            } catch {
+                print("Lumia profile cloud sync failed: \(error.localizedDescription)")
+            }
+            self.cloudProfileSyncTask = nil
+        }
+    }
+
+    private func scheduleSubscriptionCloudSync(delay: UInt64 = 850_000_000) {
+        cloudSubscriptionSyncTask?.cancel()
+        cloudSubscriptionSyncTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled, let self else { return }
+            guard self.canAttemptCloudSync else {
+                self.cloudSubscriptionSyncTask = nil
+                return
+            }
+            do {
+                try await self.firebaseBackend.saveSubscriptionSnapshot(self.subscriptionStore.snapshot())
+            } catch {
+                print("Lumia subscription sync failed: \(error.localizedDescription)")
+            }
+            self.cloudSubscriptionSyncTask = nil
+        }
+    }
+
+    private func scheduleGardenCloudSync(delay: UInt64 = 900_000_000) {
+        cloudGardenSyncTask?.cancel()
+        cloudGardenSyncTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled, let self else { return }
+            guard self.canAttemptCloudSync else {
+                self.cloudGardenSyncTask = nil
+                return
+            }
+            do {
+                try await self.firebaseBackend.saveGardenState(self.gardenStore.snapshot())
+            } catch {
+                print("Lumia garden cloud sync failed: \(error.localizedDescription)")
+            }
+            self.cloudGardenSyncTask = nil
+        }
+    }
+
+    private var canAttemptCloudSync: Bool {
+        isNetworkAvailable && firebaseBackend.currentUser != nil
     }
 
     private func accountProvider(for user: FirebaseAuth.User) -> LuminaAccountProvider {
@@ -3705,11 +4859,33 @@ final class AppState: ObservableObject {
         subscriptionStore.state
     }
 
+    var subscriptionAllowance: SubscriptionAllowance {
+        subscriptionStore.allowance
+    }
+
     var hasPremiumAccess: Bool {
         subscriptionStore.hasPremiumAccess
     }
 
     func canUse(_ feature: PremiumFeature) -> Bool {
         subscriptionStore.canUse(feature)
+    }
+
+    func canStartAIChatReply() -> Bool {
+        subscriptionStore.canStartAIChatReply()
+    }
+
+    func canStartLiveCall() -> Bool {
+        subscriptionStore.canStartLiveCall()
+    }
+
+    func recordAIChatReplyUsed() {
+        subscriptionStore.recordAIChatReply()
+        scheduleSubscriptionCloudSync(delay: 100_000_000)
+    }
+
+    func recordLiveCallSeconds(_ seconds: Int) {
+        subscriptionStore.recordLiveCall(seconds: seconds)
+        scheduleSubscriptionCloudSync(delay: 100_000_000)
     }
 }

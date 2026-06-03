@@ -15,6 +15,39 @@ Move Lumia from a set of feature screens into a safer, testable emotional-suppor
 - Stores and feature view models that replace one oversized global `AppState`.
 - Privacy controls and evaluation hooks as product features, not only policy text.
 
+## Garden Product Direction
+
+Garden should be a quiet place that remembers small user actions, not a mini-game task center.
+
+The emotional goal is that users feel their small steps were not wasted. Lumina should preserve those steps as visible traces in a calm garden. Garden must not become a pressure loop built around daily checklists, streak anxiety, watering chores, or reward grinding.
+
+Core principles:
+
+- Garden is the result layer for Journal, Therapy, Sanctuary, and Check-in.
+- A Journal reflection can grow into a memory plant.
+- A Therapy micro-plan can enter the garden as an action seed.
+- A Sanctuary practice can become a quiet object such as a lantern, stone, water feature, or wind chime.
+- Check-in state can influence garden weather and atmosphere. Anxious periods may feel mistier; calmer periods may feel brighter.
+- Garden should avoid punitive daily obligations. Replace "complete 4/4 tasks" pressure with one optional "today's small tending" moment.
+- If the user does nothing, the garden should become quieter, not damaged.
+- Garden should feel alive through gentle character movement, plant motion, growth stages, changing light, and weather.
+- Tapping a plant should feel like opening a memory, not opening a generic settings card.
+
+Target product loop:
+
+1. Therapy forms a small action, for example: "Write down tomorrow's one most important thing before bed."
+2. The action enters Garden as a seed.
+3. Growth stages map to real continuity: seed, sprout, leaf, bloom, then a stable garden object.
+4. Tapping the plant shows its source, the related Journal or Therapy moment, a short next suggestion, and a "continue tending" action.
+5. Completing the action gives light feedback such as dew, soft glow, small growth, or a character noticing the change. Avoid loud rewards.
+
+Implementation direction:
+
+- Treat Garden as a cross-feature memory and action surface, not an isolated screen.
+- Keep the visual style hand-drawn, calm, and lightly isometric. Avoid childish game UI, generic task cards, and mixed pixel/vector/card styles.
+- Prioritize a minimal closed loop first: Therapy micro-plan -> Garden plant -> plant detail -> completed tending -> visible growth -> optional Journal/Therapy jump-back.
+- Use game-like interaction only when it reinforces emotional continuity and low-pressure progress.
+
 ## Target Architecture
 
 ```mermaid

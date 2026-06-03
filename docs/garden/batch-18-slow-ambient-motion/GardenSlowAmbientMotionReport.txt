@@ -1,0 +1,11 @@
+Sprite playback now advances with a frame-locked Task.sleep loop, not a 60fps TimelineView.
+All character frame durations are multiplied by 2.4 and clamped to at least 0.28s/frame.
+
+Mira ambient idle: 34 frames, 0.48s/frame, 16.32s total, shown when waiting/accepted
+Sol ambient idle: 24 frames, 0.576s/frame, 13.82s total, shown when waiting/accepted
+Nori ambient idle: 40 frames, 0.48s/frame, 19.20s total, shown when waiting/accepted
+Mira ready offer: 16 frames, 0.336s/frame, 5.38s total, one shot
+Sol ready offer: 16 frames, 0.336s/frame, 5.38s total, one shot
+Nori ready offer: 16 frames, 0.336s/frame, 5.38s total, one shot
+Keeper walk: 16 frames, 0.28s/frame, 4.48s total, only while moving
+Keeper action: 16 frames, 0.288s/frame, 4.61s total, one shot

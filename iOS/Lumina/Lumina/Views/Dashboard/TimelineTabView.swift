@@ -2,8 +2,7 @@ import SwiftUI
 
 struct TimelineTabView: View {
     @EnvironmentObject var appState: AppState
-    @Binding var showingEditor: Bool
-    @Binding var editingEntry: JournalEntry?
+    @Binding var editorRoute: JournalEditorRoute?
 
     @State private var searchText = ""
     @State private var selectedMood: MoodType?
@@ -67,37 +66,35 @@ struct TimelineTabView: View {
                 }
             }
         }
-        .confirmationDialog(
+        .alert(
             "Delete this reflection?",
             isPresented: $showingDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
+            presenting: entryPendingDelete
+        ) { entry in
             Button("Delete Reflection", role: .destructive) {
-                if let entry = entryPendingDelete {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        appState.deleteEntry(id: entry.id)
-                    }
-                    if previewEntry?.id == entry.id {
-                        previewEntry = nil
-                    }
-                }
+                showingDeleteConfirmation = false
                 entryPendingDelete = nil
+                if previewEntry?.id == entry.id {
+                    previewEntry = nil
+                }
+                withAnimation(.easeInOut(duration: 0.16)) {
+                    appState.deleteEntry(id: entry.id)
+                }
             }
             Button("Cancel", role: .cancel) {
                 entryPendingDelete = nil
             }
-        } message: {
-            Text("This removes the entry from your local journal.")
+        } message: { _ in
+            Text("This removes the entry from your journal.")
+        }
+        .onChange(of: showingDeleteConfirmation) { isPresented in
+            if !isPresented {
+                entryPendingDelete = nil
+            }
         }
         .sheet(item: $previewEntry) { entry in
             JournalPreviewView(
                 entry: currentEntry(for: entry) ?? entry,
-                onEdit: {
-                    previewEntry = nil
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-                        openEditor(currentEntry(for: entry) ?? entry)
-                    }
-                },
                 onTogglePin: {
                     togglePin(entry)
                     previewEntry = currentEntry(for: entry)
@@ -111,13 +108,11 @@ struct TimelineTabView: View {
     }
 
     private func openNewReflection() {
-        editingEntry = nil
-        showingEditor = true
+        editorRoute = .new()
     }
 
     private func openEditor(_ entry: JournalEntry) {
-        editingEntry = entry
-        showingEditor = true
+        editorRoute = .edit(entry)
     }
 
     private func togglePin(_ entry: JournalEntry) {
@@ -151,7 +146,7 @@ struct TimelineTabView: View {
 
         let fields = [
             entry.title,
-            entry.content,
+            entry.displayContent,
             entry.date,
             entry.reflection ?? "",
             entry.actionItem ?? "",
@@ -255,7 +250,7 @@ private struct JournalTimelineSummary: View {
         if let reflection = latestEntry.reflection, !reflection.isEmpty {
             return reflection
         }
-        return latestEntry.content
+        return latestEntry.displayContent
     }
 }
 
@@ -418,6 +413,7 @@ private struct JournalMoodChip: View {
 }
 
 struct JournalCard: View {
+    @Environment(\.colorScheme) private var colorScheme
     let entry: JournalEntry
     let onOpen: () -> Void
     let onEdit: () -> Void
@@ -425,14 +421,14 @@ struct JournalCard: View {
     let onDelete: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 12) {
                 Image(systemName: entry.mood.icon)
                     .luminaFont(size: 14, weight: .bold)
                     .foregroundColor(entry.mood.timelineTint)
-                    .frame(width: 38, height: 38)
+                    .frame(width: 36, height: 36)
                     .background(entry.mood.timelineTint.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 6) {
@@ -472,46 +468,37 @@ struct JournalCard: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 Text(entry.title)
-                    .luminaFont(size: 20, weight: .bold, design: .serif)
+                    .luminaFont(size: 21, weight: .bold, design: .serif)
                     .foregroundColor(.organicForeground)
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
 
-                Text(entry.content)
-                    .luminaFont(size: 13, weight: .medium)
-                    .foregroundColor(.organicMutedFg)
-                    .lineSpacing(3)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(3)
+                JournalMarkdownInlineText(
+                    text: entry.displayContent,
+                    size: 14,
+                    weight: .medium,
+                    color: .organicMutedFg,
+                    lineLimit: 2
+                )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let reflection = entry.reflection, !reflection.isEmpty {
-                HStack(alignment: .top, spacing: 9) {
-                    Image(systemName: "quote.bubble.fill")
-                        .luminaFont(size: 12, weight: .bold)
-                        .foregroundColor(.organicSecondary)
-                        .padding(.top, 2)
-                    Text(reflection)
-                        .luminaFont(size: 12, weight: .semibold)
-                        .foregroundColor(.organicForeground.opacity(0.78))
-                        .lineSpacing(2)
-                        .lineLimit(3)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.organicMuted.opacity(0.56))
-                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-
-            if let score = entry.sentimentScore {
-                JournalToneMeter(score: score, tint: entry.mood.timelineTint)
+            if let keptLine {
+                Label(keptLine, systemImage: keptIcon)
+                    .luminaFont(size: 12, weight: .semibold)
+                    .foregroundColor(.organicForeground.opacity(colorScheme == .dark ? 0.82 : 0.72))
+                    .lineLimit(1)
+                    .padding(.horizontal, 11)
+                    .frame(height: 32)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.organicMuted.opacity(colorScheme == .dark ? 0.78 : 0.50))
+                    .clipShape(Capsule())
             }
 
             if !entry.tags.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        ForEach(entry.tags.prefix(5), id: \.self) { tag in
+                        ForEach(entry.tags.prefix(3), id: \.self) { tag in
                             Text("#\(tag)")
                                 .luminaFont(size: 10, weight: .black)
                                 .foregroundColor(.organicMutedFg)
@@ -520,47 +507,86 @@ struct JournalCard: View {
                                 .background(Color.organicMuted.opacity(0.72))
                                 .clipShape(Capsule())
                         }
+                        if entry.tags.count > 3 {
+                            Text("+\(entry.tags.count - 3)")
+                                .luminaFont(size: 10, weight: .black)
+                                .foregroundColor(.organicMutedFg)
+                                .padding(.horizontal, 9)
+                                .frame(height: 24)
+                                .background(Color.organicMuted.opacity(0.48))
+                                .clipShape(Capsule())
+                        }
                     }
                 }
             }
         }
-        .padding(16)
+        .padding(15)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.organicCard)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(Color.organicCard.opacity(colorScheme == .dark ? 0.96 : 0.82))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .strokeBorder(entry.isPinned ? Color.organicPrimary.opacity(0.48) : Color.organicBorder.opacity(0.70), lineWidth: 1)
         }
-        .shadow(color: Color.black.opacity(0.05), radius: 14, x: 0, y: 8)
-        .contentShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: Color.black.opacity(0.035), radius: 10, x: 0, y: 6)
+        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         .onTapGesture(perform: onOpen)
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Opens reflection preview")
+    }
+
+    private var keptLine: String? {
+        if let action = entry.actionItem?.trimmingCharacters(in: .whitespacesAndNewlines), !action.isEmpty {
+            return action
+        }
+        if let reflection = entry.reflection?.trimmingCharacters(in: .whitespacesAndNewlines), !reflection.isEmpty {
+            return reflection
+        }
+        let summary = entry.summary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return summary.isEmpty ? nil : summary
+    }
+
+    private var keptIcon: String {
+        entry.actionItem?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? "checkmark.circle.fill"
+            : "quote.bubble.fill"
     }
 }
 
 private struct JournalPreviewView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isEditing = false
     let entry: JournalEntry
-    let onEdit: () -> Void
     let onTogglePin: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
+        Group {
+            if isEditing {
+                JournalEditorView(editingEntry: entry)
+                    .id("preview-edit-\(entry.id)")
+            } else {
+                previewBody
+            }
+        }
+        .presentationDetents([.large])
+    }
+
+    private var previewBody: some View {
         NavigationView {
             ZStack {
                 JournalPreviewBackdrop().ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 20) {
                         HStack(alignment: .center, spacing: 12) {
                             Image(systemName: entry.mood.icon)
-                                .luminaFont(size: 17, weight: .bold)
+                                .luminaFont(size: 16, weight: .bold)
                                 .foregroundColor(entry.mood.timelineTint)
-                                .frame(width: 48, height: 48)
+                                .frame(width: 44, height: 44)
                                 .background(entry.mood.timelineTint.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
 
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(spacing: 7) {
@@ -575,7 +601,7 @@ private struct JournalPreviewView: View {
                                         .kerning(1.7)
                                 }
                                 Text(entry.mood.label)
-                                    .luminaFont(size: 13, weight: .black)
+                                    .luminaFont(size: 12, weight: .black)
                                     .foregroundColor(.organicMutedFg)
                             }
 
@@ -584,23 +610,23 @@ private struct JournalPreviewView: View {
 
                         VStack(alignment: .leading, spacing: 12) {
                             Text(entry.title)
-                                .luminaFont(size: 34, weight: .bold, design: .serif)
+                                .luminaFont(size: 31, weight: .bold, design: .serif)
                                 .foregroundColor(.organicForeground)
                                 .fixedSize(horizontal: false, vertical: true)
 
-                            Text(entry.content)
-                                .luminaFont(size: 17, weight: .medium, design: .serif)
-                                .foregroundColor(.organicMutedFg)
-                                .lineSpacing(6)
-                                .fixedSize(horizontal: false, vertical: true)
+                            JournalMarkdownText(
+                                text: entry.displayContent,
+                                baseSize: 16,
+                                color: .organicForeground.opacity(colorScheme == .dark ? 0.84 : 0.78)
+                            )
                         }
 
                         if let reflection = entry.reflection, !reflection.isEmpty {
-                            JournalPreviewInsight(icon: "quote.bubble.fill", title: "Reflection", text: reflection, tint: .organicSecondary)
+                            JournalPreviewInsight(icon: "quote.bubble.fill", title: "Kept", text: reflection, tint: .organicSecondary)
                         }
 
                         if let actionItem = entry.actionItem, !actionItem.isEmpty {
-                            JournalPreviewInsight(icon: "checkmark.circle.fill", title: "Small step", text: actionItem, tint: .organicPrimary)
+                            JournalPreviewInsight(icon: "checkmark.circle.fill", title: "Next", text: actionItem, tint: .organicPrimary)
                         }
 
                         if let score = entry.sentimentScore {
@@ -616,14 +642,16 @@ private struct JournalPreviewView: View {
                         }
 
                         if !entry.tags.isEmpty {
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
-                                ForEach(entry.tags, id: \.self) { tag in
-                                    Text("#\(tag)")
-                                        .luminaFont(size: 12, weight: .black)
-                                        .foregroundColor(.organicMutedFg)
-                                        .frame(maxWidth: .infinity)
-                                        .frame(height: 34)
-                                        .background(Color.organicMuted.opacity(0.60), in: Capsule())
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(entry.tags, id: \.self) { tag in
+                                        Text("#\(tag)")
+                                            .luminaFont(size: 12, weight: .black)
+                                            .foregroundColor(.organicMutedFg)
+                                            .padding(.horizontal, 12)
+                                            .frame(height: 32)
+                                            .background(Color.organicMuted.opacity(0.60), in: Capsule())
+                                    }
                                 }
                             }
                         }
@@ -633,11 +661,11 @@ private struct JournalPreviewView: View {
                     .padding(.bottom, 32)
                 }
             }
-            .navigationTitle("Reflection")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Close") {
+                    Button("Done") {
                         dismiss()
                     }
                     .luminaFont(size: 14, weight: .bold)
@@ -645,9 +673,12 @@ private struct JournalPreviewView: View {
                 }
 
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button(action: onEdit) {
-                        Image(systemName: "pencil")
+                    Button {
+                        isEditing = true
+                    } label: {
+                        Label("Edit", systemImage: "pencil")
                     }
+                    .luminaFont(size: 13, weight: .bold)
                     .accessibilityLabel("Edit reflection")
 
                     Menu {
@@ -660,7 +691,6 @@ private struct JournalPreviewView: View {
                 }
             }
         }
-        .presentationDetents([.large])
     }
 }
 
@@ -698,11 +728,13 @@ private struct JournalPreviewInsight: View {
                     .foregroundColor(.organicMutedFg)
                     .textCase(.uppercase)
                     .kerning(1.2)
-                Text(text)
-                    .luminaFont(size: 14, weight: .semibold)
-                    .foregroundColor(.organicForeground.opacity(0.84))
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                JournalMarkdownInlineText(
+                    text: text,
+                    size: 14,
+                    weight: .semibold,
+                    color: .organicForeground.opacity(0.84),
+                    lineLimit: nil
+                )
             }
         }
         .padding(14)
@@ -712,6 +744,182 @@ private struct JournalPreviewInsight: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(Color.organicBorder.opacity(0.54), lineWidth: 1)
         }
+    }
+}
+
+private struct JournalMarkdownText: View {
+    let text: String
+    let baseSize: CGFloat
+    let color: Color
+
+    private var blocks: [JournalMarkdownBlock] {
+        JournalMarkdownBlock.parse(text)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(blocks) { block in
+                switch block.kind {
+                case .heading1:
+                    JournalMarkdownInlineText(
+                        text: block.text,
+                        size: baseSize + 8,
+                        weight: .bold,
+                        color: color,
+                        lineLimit: nil
+                    )
+                case .heading2:
+                    JournalMarkdownInlineText(
+                        text: block.text,
+                        size: baseSize + 4,
+                        weight: .bold,
+                        color: color,
+                        lineLimit: nil
+                    )
+                case .heading3:
+                    JournalMarkdownInlineText(
+                        text: block.text,
+                        size: baseSize + 1,
+                        weight: .bold,
+                        color: color,
+                        lineLimit: nil
+                    )
+                case .bullet:
+                    HStack(alignment: .firstTextBaseline, spacing: 9) {
+                        Circle()
+                            .fill(Color.organicPrimary.opacity(0.78))
+                            .frame(width: 5, height: 5)
+                        JournalMarkdownInlineText(
+                            text: block.text,
+                            size: baseSize,
+                            weight: .medium,
+                            color: color,
+                            lineLimit: nil
+                        )
+                    }
+                case .numbered:
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(block.marker ?? "")
+                            .luminaFont(size: baseSize - 1, weight: .black, design: .rounded)
+                            .foregroundColor(.organicPrimary)
+                            .frame(minWidth: 18, alignment: .trailing)
+                        JournalMarkdownInlineText(
+                            text: block.text,
+                            size: baseSize,
+                            weight: .medium,
+                            color: color,
+                            lineLimit: nil
+                        )
+                    }
+                case .quote:
+                    JournalMarkdownInlineText(
+                        text: block.text,
+                        size: baseSize,
+                        weight: .semibold,
+                        color: color,
+                        lineLimit: nil
+                    )
+                    .padding(.leading, 12)
+                    .overlay(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.organicPrimary.opacity(0.38))
+                            .frame(width: 3)
+                    }
+                case .paragraph:
+                    JournalMarkdownInlineText(
+                        text: block.text,
+                        size: baseSize,
+                        weight: .medium,
+                        color: color,
+                        lineLimit: nil
+                    )
+                }
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct JournalMarkdownInlineText: View {
+    let text: String
+    let size: CGFloat
+    let weight: Font.Weight
+    let color: Color
+    let lineLimit: Int?
+
+    private var attributedText: AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .inlineOnlyPreservingWhitespace,
+            failurePolicy: .returnPartiallyParsedIfPossible
+        )
+        return (try? AttributedString(markdown: text, options: options)) ?? AttributedString(text)
+    }
+
+    var body: some View {
+        Text(attributedText)
+            .font(.system(size: size, weight: weight, design: .serif))
+            .foregroundColor(color)
+            .lineSpacing(4)
+            .multilineTextAlignment(.leading)
+            .lineLimit(lineLimit)
+            .fixedSize(horizontal: false, vertical: lineLimit == nil)
+    }
+}
+
+private struct JournalMarkdownBlock: Identifiable {
+    enum Kind {
+        case heading1
+        case heading2
+        case heading3
+        case bullet
+        case numbered
+        case quote
+        case paragraph
+    }
+
+    let id: Int
+    let kind: Kind
+    let text: String
+    let marker: String?
+
+    static func parse(_ markdown: String) -> [JournalMarkdownBlock] {
+        let lines = markdown.components(separatedBy: .newlines)
+        var blocks: [JournalMarkdownBlock] = []
+
+        for rawLine in lines {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !line.isEmpty else { continue }
+
+            let id = blocks.count
+            if line.hasPrefix("### ") {
+                blocks.append(JournalMarkdownBlock(id: id, kind: .heading3, text: String(line.dropFirst(4)), marker: nil))
+            } else if line.hasPrefix("## ") {
+                blocks.append(JournalMarkdownBlock(id: id, kind: .heading2, text: String(line.dropFirst(3)), marker: nil))
+            } else if line.hasPrefix("# ") {
+                blocks.append(JournalMarkdownBlock(id: id, kind: .heading1, text: String(line.dropFirst(2)), marker: nil))
+            } else if line.hasPrefix("- ") || line.hasPrefix("* ") {
+                blocks.append(JournalMarkdownBlock(id: id, kind: .bullet, text: String(line.dropFirst(2)), marker: nil))
+            } else if line.hasPrefix("> ") {
+                blocks.append(JournalMarkdownBlock(id: id, kind: .quote, text: String(line.dropFirst(2)), marker: nil))
+            } else if let numbered = numberedLine(line) {
+                blocks.append(JournalMarkdownBlock(id: id, kind: .numbered, text: numbered.text, marker: numbered.marker))
+            } else {
+                blocks.append(JournalMarkdownBlock(id: id, kind: .paragraph, text: line, marker: nil))
+            }
+        }
+
+        return blocks
+    }
+
+    private static func numberedLine(_ line: String) -> (marker: String, text: String)? {
+        guard let dotIndex = line.firstIndex(of: ".") else { return nil }
+        let marker = line[..<dotIndex]
+        guard !marker.isEmpty, marker.allSatisfy({ $0.isNumber }) else { return nil }
+        let textStart = line.index(after: dotIndex)
+        guard textStart < line.endIndex else { return nil }
+        let text = line[textStart...].trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return nil }
+        return ("\(marker).", text)
     }
 }
 
@@ -751,6 +959,21 @@ private struct JournalEmptyState: View {
     let onNewReflection: () -> Void
     let onClearFilters: () -> Void
 
+    private let examples = [
+        JournalGuideExample(
+            title: "A tense meeting",
+            mood: .anxious,
+            body: "I kept replaying what I said. One thing I know for sure: I was trying to be clear, not difficult.",
+            cue: "Name the moment, then one fact."
+        ),
+        JournalGuideExample(
+            title: "A small steady thing",
+            mood: .calm,
+            body: "I drank water before coffee and looked outside for a minute. It did not fix the day, but it softened the start.",
+            cue: "Small evidence counts."
+        )
+    ]
+
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: hasEntries ? "line.3.horizontal.decrease.circle" : "square.and.pencil")
@@ -765,11 +988,20 @@ private struct JournalEmptyState: View {
                     .luminaFont(size: 20, weight: .bold, design: .serif)
                     .foregroundColor(.organicForeground)
                     .multilineTextAlignment(.center)
-                Text(hasEntries ? "Clear filters or search for another phrase." : "Capture a thought now and it will appear here for review later.")
+                Text(hasEntries ? "Clear filters or try another phrase." : "Use a shape below, or write your own.")
                     .luminaFont(size: 13, weight: .medium)
                     .foregroundColor(.organicMutedFg)
                     .multilineTextAlignment(.center)
                     .lineSpacing(2)
+            }
+
+            if !hasEntries {
+                VStack(spacing: 9) {
+                    ForEach(examples) { example in
+                        JournalGuideExampleCard(example: example)
+                    }
+                }
+                .padding(.top, 2)
             }
 
             Button(action: hasEntries ? onClearFilters : onNewReflection) {
@@ -792,6 +1024,60 @@ private struct JournalEmptyState: View {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .strokeBorder(Color.organicBorder.opacity(0.72), lineWidth: 1)
         }
+    }
+}
+
+private struct JournalGuideExample: Identifiable {
+    let id = UUID()
+    let title: String
+    let mood: MoodType
+    let body: String
+    let cue: String
+}
+
+private struct JournalGuideExampleCard: View {
+    let example: JournalGuideExample
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 11) {
+            Image(systemName: example.mood.icon)
+                .luminaFont(size: 13, weight: .bold)
+                .foregroundColor(example.mood.timelineTint)
+                .frame(width: 34, height: 34)
+                .background(example.mood.timelineTint.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 7) {
+                    Text("Example")
+                        .luminaFont(size: 9, weight: .black)
+                        .foregroundColor(.organicPrimary)
+                        .kerning(1.0)
+                        .textCase(.uppercase)
+                    Text(example.cue)
+                        .luminaFont(size: 10, weight: .bold)
+                        .foregroundColor(.organicMutedFg)
+                        .lineLimit(1)
+                }
+
+                Text(example.title)
+                    .luminaFont(size: 14, weight: .bold, design: .serif)
+                    .foregroundColor(.organicForeground)
+                    .lineLimit(1)
+
+                Text(example.body)
+                    .luminaFont(size: 12, weight: .medium)
+                    .foregroundColor(.organicMutedFg)
+                    .lineSpacing(2)
+                    .lineLimit(3)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(13)
+        .background(Color.organicMuted.opacity(0.40))
+        .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 }
 

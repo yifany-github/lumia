@@ -1,6 +1,7 @@
 import AVFoundation
 import FirebaseAILogic
 import CoreImage
+import NaturalLanguage
 import Speech
 import SwiftUI
 import UIKit
@@ -10,19 +11,20 @@ final class SpeechInputController: ObservableObject {
     @Published private(set) var isListening = false
     @Published private(set) var transcript = ""
     @Published private(set) var errorMessage: String?
+    @Published private(set) var activeLanguageLabel = "Auto language"
 
     private let audioEngine = AVAudioEngine()
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale.current) ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+    private var speechRecognizer: SFSpeechRecognizer?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
 
     var isAvailable: Bool {
-        speechRecognizer != nil
+        !Self.supportedLocales.isEmpty
     }
 
-    func start() {
+    func start(preferredText: String = "") {
         guard !isListening else { return }
-        Task { await startListening() }
+        Task { await startListening(preferredText: preferredText) }
     }
 
     func stop() {
@@ -34,14 +36,18 @@ final class SpeechInputController: ObservableObject {
         stopListening(cancelTask: true)
     }
 
-    private func startListening() async {
+    private func startListening(preferredText: String) async {
         errorMessage = nil
         transcript = ""
 
-        guard let speechRecognizer else {
+        guard let recognitionTarget = Self.makeRecognitionTarget(preferredText: preferredText) else {
             errorMessage = "Voice input is not available on this device."
             return
         }
+        speechRecognizer = recognitionTarget.recognizer
+        activeLanguageLabel = recognitionTarget.displayName
+
+        let speechRecognizer = recognitionTarget.recognizer
 
         guard await requestSpeechAuthorization() else {
             errorMessage = "Enable Speech Recognition in Settings to use voice input."
@@ -68,6 +74,7 @@ final class SpeechInputController: ObservableObject {
 
             let request = SFSpeechAudioBufferRecognitionRequest()
             request.shouldReportPartialResults = true
+            request.taskHint = .dictation
             if #available(iOS 16.0, *) {
                 request.addsPunctuation = true
             }
@@ -137,6 +144,7 @@ final class SpeechInputController: ObservableObject {
         recognitionRequest = nil
         recognitionTask = nil
         isListening = false
+        speechRecognizer = nil
 
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
@@ -147,6 +155,164 @@ final class SpeechInputController: ObservableObject {
             return "No speech detected."
         }
         return "Voice input stopped. Try again."
+    }
+
+    private static func makeRecognitionTarget(preferredText: String) -> (recognizer: SFSpeechRecognizer, displayName: String)? {
+        let supportedLocales = Self.supportedLocales
+        for locale in recognitionLocaleCandidates(preferredText: preferredText, supportedLocales: supportedLocales) {
+            if let recognizer = SFSpeechRecognizer(locale: locale) {
+                return (recognizer, displayName(for: locale))
+            }
+        }
+        return nil
+    }
+
+    private static let supportedLocales = SFSpeechRecognizer.supportedLocales()
+
+    private static func recognitionLocaleCandidates(preferredText: String, supportedLocales: Set<Locale>) -> [Locale] {
+        let requestedIdentifiers = languageHints(from: preferredText)
+            + keyboardLanguageIdentifiers()
+            + Locale.preferredLanguages
+            + [Locale.current.identifier]
+            + fallbackLanguageIdentifiers
+
+        var seen = Set<String>()
+        var candidates: [Locale] = []
+        for identifier in requestedIdentifiers {
+            guard let locale = supportedLocale(matching: identifier, supportedLocales: supportedLocales) else { continue }
+            let key = normalizedIdentifier(locale.identifier)
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+            candidates.append(locale)
+        }
+        return candidates
+    }
+
+    private static let fallbackLanguageIdentifiers = [
+        "en-US",
+        "zh-Hans",
+        "zh-Hant",
+        "es-ES",
+        "es-MX",
+        "fr-FR",
+        "de-DE",
+        "ja-JP",
+        "ko-KR",
+        "pt-BR",
+        "it-IT"
+    ]
+
+    private static func languageHints(from text: String) -> [String] {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        var hints: [String] = []
+        if containsCJK(in: trimmed) {
+            hints.append(contentsOf: ["zh-Hans", "zh-Hant"])
+        }
+        if containsSpanishSpecificCharacters(in: trimmed) {
+            hints.append(contentsOf: ["es-ES", "es-MX"])
+        }
+
+        let letterCount = trimmed.unicodeScalars.filter { CharacterSet.letters.contains($0) }.count
+        if letterCount >= 8 {
+            let recognizer = NLLanguageRecognizer()
+            recognizer.processString(trimmed)
+            if let language = recognizer.dominantLanguage?.rawValue {
+                hints.append(contentsOf: mappedIdentifiers(forLanguage: language))
+            }
+        }
+
+        return hints
+    }
+
+    private static func mappedIdentifiers(forLanguage language: String) -> [String] {
+        switch language {
+        case "zh", "zh-Hans":
+            return ["zh-Hans", "zh-CN"]
+        case "zh-Hant":
+            return ["zh-Hant", "zh-TW"]
+        case "en":
+            return ["en-US", "en-GB"]
+        case "es":
+            return ["es-ES", "es-MX", "es-US"]
+        case "fr":
+            return ["fr-FR", "fr-CA"]
+        case "pt":
+            return ["pt-BR", "pt-PT"]
+        default:
+            return [language]
+        }
+    }
+
+    private static func containsCJK(in text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            (0x4E00...0x9FFF).contains(Int(scalar.value))
+                || (0x3400...0x4DBF).contains(Int(scalar.value))
+        }
+    }
+
+    private static func containsSpanishSpecificCharacters(in text: String) -> Bool {
+        text.range(of: #"[áéíóúüñ¿¡]"#, options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    private static func keyboardLanguageIdentifiers() -> [String] {
+        UITextInputMode.activeInputModes
+            .compactMap(\.primaryLanguage)
+            .filter { !$0.isEmpty && !$0.localizedCaseInsensitiveContains("emoji") }
+    }
+
+    private static func supportedLocale(matching identifier: String, supportedLocales: Set<Locale>) -> Locale? {
+        let normalizedRequest = normalizedIdentifier(identifier)
+        if let exact = supportedLocales.first(where: { normalizedIdentifier($0.identifier) == normalizedRequest }) {
+            return exact
+        }
+
+        let requestedLanguage = languageCode(from: identifier)
+        let matches = supportedLocales.filter { languageCode(from: $0.identifier) == requestedLanguage }
+        return matches.sorted {
+            localeMatchScore($0, requestedIdentifier: normalizedRequest) < localeMatchScore($1, requestedIdentifier: normalizedRequest)
+        }.first
+    }
+
+    private static func localeMatchScore(_ locale: Locale, requestedIdentifier: String) -> Int {
+        let normalizedLocale = normalizedIdentifier(locale.identifier)
+        var score = normalizedLocale == requestedIdentifier ? 0 : 100
+
+        if requestedIdentifier.contains("hans"),
+           normalizedLocale.contains("hans") || normalizedLocale.contains("cn") || normalizedLocale.contains("sg") {
+            score -= 35
+        }
+        if requestedIdentifier.contains("hant"),
+           normalizedLocale.contains("hant") || normalizedLocale.contains("tw") || normalizedLocale.contains("hk") {
+            score -= 35
+        }
+
+        let requestedPieces = requestedIdentifier.split(separator: "-")
+        if requestedPieces.count > 1,
+           let requestedRegion = requestedPieces.last,
+           normalizedLocale.split(separator: "-").contains(requestedRegion) {
+            score -= 20
+        }
+
+        if normalizedLocale == normalizedIdentifier(Locale.current.identifier) {
+            score -= 8
+        }
+        return score
+    }
+
+    private static func languageCode(from identifier: String) -> String {
+        Locale(identifier: identifier.replacingOccurrences(of: "-", with: "_")).languageCode
+            ?? identifier.split(separator: "-").first.map(String.init)
+            ?? identifier
+    }
+
+    private static func normalizedIdentifier(_ identifier: String) -> String {
+        identifier.replacingOccurrences(of: "_", with: "-").lowercased()
+    }
+
+    private static func displayName(for locale: Locale) -> String {
+        Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier
     }
 }
 
@@ -490,8 +656,6 @@ struct FullChatView: View {
     @StateObject private var speechInput = SpeechInputController()
     @State private var activeTherapist: Therapist?
     @State private var messages: [ChatMessage] = []
-    @State private var input = ""
-    @State private var speechInputPrefix = ""
     @State private var isLoading = false
     @State private var showStats = false
     @State private var metrics = EmotionalMetrics()
@@ -501,6 +665,10 @@ struct FullChatView: View {
     @State private var riskLevel: RiskLevel = .none
     @State private var turnMetadata: [ConversationTurnMetadata] = []
     @State private var requestID = UUID()
+    @State private var quotaNotice: String?
+    @State private var activeUsesJournalContext = false
+    @State private var activeUsesGuideMemory = false
+    @State private var speechInputRequestID = 0
 
     var body: some View {
         ZStack {
@@ -512,12 +680,13 @@ struct FullChatView: View {
                     therapist: therapist,
                     messages: messageSnapshot,
                     sessionID: sessionIDSnapshot,
-                    input: $input,
+                    userAvatarID: appState.profileAvatarID,
                     isLoading: isLoading,
                     showStats: showStats,
                     conversationState: conversationState,
-                    usesJournalContext: appState.isUsingJournalContext(for: therapist),
-                    usesGuideMemory: appState.hasTherapistMemory(for: therapist, excluding: sessionIDSnapshot),
+                    isNetworkAvailable: appState.isNetworkAvailable,
+                    usesJournalContext: activeUsesJournalContext,
+                    usesGuideMemory: activeUsesGuideMemory,
                     onBack: {
                         withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.88)) {
                             closeCurrentSession()
@@ -532,10 +701,10 @@ struct FullChatView: View {
                             previousMetrics: metricsSnapshot
                         )
                     },
-                    onStartVoiceCall: { activeCall = .voice },
-                    onStartVideoCall: { activeCall = .video },
+                    onStartVoiceCall: { startCallIfAllowed(.voice) },
+                    onStartVideoCall: { startCallIfAllowed(.video) },
                     speechInput: speechInput,
-                    onToggleSpeechInput: toggleSpeechInput,
+                    speechInputRequestID: speechInputRequestID,
                     onSelectConversationState: selectConversationState,
                     onSend: send
                 )
@@ -570,6 +739,18 @@ struct FullChatView: View {
                         riskLevel: riskLevel,
                         contextBrief: appState.therapyContextBrief(for: therapist),
                         onCommitTurn: commitCallTurn,
+                        onFallbackToVoiceInput: {
+                            activeCall = nil
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                speechInputRequestID += 1
+                            }
+                        },
+                        onFallbackToText: {
+                            activeCall = nil
+                        },
+                        onRecordUsage: { seconds in
+                            recordLiveCallUsage(seconds)
+                        },
                         onEnd: { activeCall = nil }
                     )
                 }
@@ -593,15 +774,64 @@ struct FullChatView: View {
         }
         .animation(.interactiveSpring(response: 0.34, dampingFraction: 0.88), value: activeTherapist?.id)
         .onAppear(perform: openPendingTherapyRequestIfNeeded)
+        .onChange(of: appState.pendingTherapySessionID) { _ in
+            openPendingTherapyRequestIfNeeded()
+        }
         .onChange(of: appState.pendingTherapyTherapistID) { _ in
             openPendingTherapyRequestIfNeeded()
         }
-        .onChange(of: speechInput.transcript) { transcript in
-            applySpeechTranscript(transcript)
+        .onChange(of: appState.isNetworkAvailable) { isAvailable in
+            handleNetworkChange(isAvailable)
+        }
+        .alert(quotaNoticeTitle, isPresented: Binding(
+            get: { quotaNotice != nil },
+            set: { if !$0 { quotaNotice = nil } }
+        )) {
+            Button("OK", role: .cancel) { quotaNotice = nil }
+        } message: {
+            Text(quotaNotice ?? "")
         }
     }
 
+    private var quotaNoticeTitle: String {
+        if quotaNotice?.localizedCaseInsensitiveContains("internet") == true ||
+            quotaNotice?.localizedCaseInsensitiveContains("offline") == true {
+            return "Offline"
+        }
+        if quotaNotice?.localizedCaseInsensitiveContains("voice") == true ||
+            quotaNotice?.localizedCaseInsensitiveContains("preview") == true {
+            return "Free voice preview used"
+        }
+        return "Live unavailable"
+    }
+
+    private func handleNetworkChange(_ isAvailable: Bool) {
+        guard !isAvailable else { return }
+        if speechInput.isListening {
+            speechInput.stop()
+        }
+        guard isLoading else { return }
+        requestID = UUID()
+        isLoading = false
+        messages.append(ChatMessage(
+            id: UUID().uuidString,
+            role: .model,
+            text: GeminiService.networkUnavailableMessage
+        ))
+        saveCurrentSession()
+    }
+
     private func openPendingTherapyRequestIfNeeded() {
+        if let sessionID = appState.pendingTherapySessionID {
+            guard let session = appState.chatSessions[sessionID] else {
+                appState.consumePendingTherapyRequest()
+                return
+            }
+            openExistingSession(session)
+            appState.consumePendingTherapyRequest()
+            return
+        }
+
         guard let id = appState.pendingTherapyTherapistID,
               let therapist = allTherapists.first(where: { $0.id == id }) else { return }
         openNewSession(therapist)
@@ -612,15 +842,44 @@ struct FullChatView: View {
         openNewSession(therapist)
     }
 
+    private func startCallIfAllowed(_ kind: TherapyCallKind) {
+        guard appState.isSignedIn else {
+            NotificationCenter.default.post(name: .luminaShowRegistrationGate, object: nil)
+            return
+        }
+        guard appState.isNetworkAvailable else {
+            quotaNotice = GeminiService.networkUnavailableMessage
+            return
+        }
+        guard appState.canStartLiveCall() else {
+            quotaNotice = "Your free voice preview is used for today. Text chat is still available, and Plus keeps longer voice sessions available."
+            return
+        }
+        activeCall = kind
+    }
+
+    private func recordLiveCallUsage(_ seconds: Int) {
+        guard seconds > 0 else { return }
+        appState.recordLiveCallSeconds(seconds)
+        Task {
+            do {
+                try await GeminiService.shared.recordVoiceUsage(seconds: seconds)
+                await MainActor.run {
+                    appState.refreshSubscriptionFromCloud()
+                }
+            } catch {
+                print("Lumia voice usage sync failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func openNewSession(_ therapist: Therapist) {
         let nextSessionID = UUID().uuidString
         let nextMessages = [ChatMessage(id: UUID().uuidString, role: .model, text: appState.personalizedTherapyOpening(for: therapist) ?? therapist.greeting)]
 
         requestID = UUID()
         speechInput.cancel()
-        speechInputPrefix = ""
         activeTherapist = therapist
-        input = ""
         isLoading = false
         showStats = false
         activeCall = nil
@@ -630,13 +889,14 @@ struct FullChatView: View {
         conversationState = .checkIn
         riskLevel = .none
         turnMetadata = []
+        refreshActiveContextNotice(for: therapist, excluding: nextSessionID)
 
         appState.saveSession(ChatSession(
             id: nextSessionID,
             therapistID: therapist.id,
             messages: nextMessages,
             metrics: EmotionalMetrics()
-        ))
+        ), publish: .silent)
     }
 
     private func openExistingSession(_ session: ChatSession) {
@@ -645,9 +905,7 @@ struct FullChatView: View {
 
         requestID = UUID()
         speechInput.cancel()
-        speechInputPrefix = ""
         activeTherapist = therapist
-        input = ""
         isLoading = false
         showStats = false
         activeCall = nil
@@ -659,6 +917,7 @@ struct FullChatView: View {
         conversationState = session.conversationState
         riskLevel = session.lastRiskLevel
         turnMetadata = session.turnMetadata
+        refreshActiveContextNotice(for: therapist, excluding: session.id)
     }
 
     private func closeCurrentSession() {
@@ -667,16 +926,16 @@ struct FullChatView: View {
 
         requestID = UUID()
         speechInput.cancel()
-        speechInputPrefix = ""
         isLoading = false
         showStats = false
         activeCall = nil
         activeTherapist = nil
-        input = ""
         currentSessionID = nil
         conversationState = .checkIn
         riskLevel = .none
         turnMetadata = []
+        activeUsesJournalContext = false
+        activeUsesGuideMemory = false
         messages = []
         metrics = EmotionalMetrics()
 
@@ -717,9 +976,7 @@ struct FullChatView: View {
 
         requestID = UUID()
         speechInput.cancel()
-        speechInputPrefix = ""
         activeTherapist = therapist
-        input = ""
         isLoading = false
         showStats = false
         activeCall = nil
@@ -730,7 +987,8 @@ struct FullChatView: View {
         riskLevel = .none
         turnMetadata = []
 
-        appState.saveSessions([previousSession, nextSession].compactMap { $0 })
+        appState.saveSessions([previousSession, nextSession].compactMap { $0 }, publish: .silent)
+        refreshActiveContextNotice(for: therapist, excluding: nextSessionID)
     }
 
     private func openSession(_ session: ChatSession) {
@@ -740,8 +998,6 @@ struct FullChatView: View {
 
         requestID = UUID()
         speechInput.cancel()
-        speechInputPrefix = ""
-        input = ""
         isLoading = false
         showStats = false
         activeCall = nil
@@ -753,13 +1009,19 @@ struct FullChatView: View {
         turnMetadata = session.turnMetadata
 
         if let previousSession {
-            appState.saveSession(previousSession)
+            appState.saveSession(previousSession, publish: .silent)
         }
+        refreshActiveContextNotice(for: therapist, excluding: session.id)
+    }
+
+    private func refreshActiveContextNotice(for therapist: Therapist, excluding sessionID: String?) {
+        activeUsesJournalContext = appState.isUsingJournalContext(for: therapist)
+        activeUsesGuideMemory = appState.hasTherapistMemory(for: therapist, excluding: sessionID)
     }
 
     private func saveCurrentSession() {
         guard let session = currentSession(ensureID: true) else { return }
-        appState.saveSession(session)
+        appState.saveSession(session, publish: .silent)
     }
 
     private func commitCallTurn(userText: String, assistantText: String) {
@@ -786,21 +1048,6 @@ struct FullChatView: View {
         saveCurrentSession()
     }
 
-    private func toggleSpeechInput() {
-        if speechInput.isListening {
-            speechInput.stop()
-        } else {
-            speechInputPrefix = input.trimmingCharacters(in: .whitespacesAndNewlines)
-            speechInput.start()
-        }
-    }
-
-    private func applySpeechTranscript(_ transcript: String) {
-        guard !transcript.isEmpty else { return }
-        let prefix = speechInputPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
-        input = prefix.isEmpty ? transcript : "\(prefix) \(transcript)"
-    }
-
     private func currentSession(ensureID: Bool = false) -> ChatSession? {
         guard let therapist = activeTherapist else { return nil }
         let sessionID = currentSessionID ?? UUID().uuidString
@@ -818,18 +1065,15 @@ struct FullChatView: View {
         )
     }
 
-    private func send() {
+    private func send(_ rawText: String) {
         guard let therapist = activeTherapist else { return }
         if speechInput.isListening {
             speechInput.stop()
         }
-        speechInputPrefix = ""
-        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
 
-        input = ""
         messages.append(ChatMessage(id: UUID().uuidString, role: .user, text: text))
-        isLoading = true
 
         let stateBeforeTurn = conversationState
         let turnPreparation = ConversationEngine().prepareTurn(
@@ -865,11 +1109,35 @@ struct FullChatView: View {
             appState.addTherapyMicroPlan(microPlan)
         }
 
+        if turnPreparation.shouldUseAI, !appState.isNetworkAvailable {
+            messages.append(ChatMessage(
+                id: UUID().uuidString,
+                role: .model,
+                text: GeminiService.networkUnavailableMessage
+            ))
+            isLoading = false
+            saveCurrentSession()
+            return
+        }
+
+        isLoading = true
+
         if !turnPreparation.shouldUseAI, let immediateReply = turnPreparation.immediateReply {
             messages.append(ChatMessage(
                 id: UUID().uuidString,
                 role: .model,
                 text: immediateReply
+            ))
+            isLoading = false
+            saveCurrentSession()
+            return
+        }
+
+        if turnPreparation.shouldUseAI, !appState.canStartAIChatReply() {
+            messages.append(ChatMessage(
+                id: UUID().uuidString,
+                role: .model,
+                text: "You have used today's free AI replies. We can keep this conversation saved here, and you can continue tomorrow or upgrade for longer support."
             ))
             isLoading = false
             saveCurrentSession()
@@ -899,6 +1167,7 @@ struct FullChatView: View {
 
                 await MainActor.run {
                     guard requestID == activeRequestID else { return }
+                    appState.recordAIChatReplyUsed()
                     messages.append(ChatMessage(id: UUID().uuidString, role: .model, text: reply))
                     if stateSnapshot == .plan,
                        let microPlan = ConversationEngine().extractMicroPlan(from: reply, sourceSessionID: sessionIDSnapshot) {
@@ -919,12 +1188,10 @@ struct FullChatView: View {
             } catch {
                 await MainActor.run {
                     guard requestID == activeRequestID else { return }
-                    let message: String
-                    if let serviceError = error as? GeminiServiceError {
-                        message = serviceError.localizedDescription
-                    } else {
-                        message = "Gemini could not respond: \(error.localizedDescription)"
-                    }
+                    let message = GeminiService.userFacingMessage(
+                        for: error,
+                        fallback: "I could not respond right now. Please try again in a moment."
+                    )
                     messages.append(ChatMessage(
                         id: UUID().uuidString,
                         role: .model,
@@ -1228,9 +1495,14 @@ enum TherapyLiveState: Equatable {
     var label: String {
         switch self {
         case .idle: return "Ready"
-        case .connecting: return "Connecting to Gemini Live..."
-        case .connected: return "Gemini Live"
-        case .failed: return "Live unavailable"
+        case .connecting: return "Calling..."
+        case .connected: return "Live connected"
+        case .failed(let message):
+            if message.localizedCaseInsensitiveContains("internet") ||
+                message.localizedCaseInsensitiveContains("offline") {
+                return "Offline"
+            }
+            return "Voice unavailable"
         }
     }
 }
@@ -1360,9 +1632,10 @@ final class TherapyLiveCallController: ObservableObject {
         Task {
             guard await requestRecordPermission() else {
                 await MainActor.run {
-                    self.state = .failed("Microphone permission is required.")
-                    self.errorMessage = "Microphone access is needed for Gemini Live."
-                    self.outputTranscript = "Enable Microphone access in Settings, then try again."
+                    self.markFailed(
+                        "Microphone access is off. Enable it in Settings, or continue in text chat.",
+                        output: "Microphone access is needed for Live voice."
+                    )
                 }
                 return
             }
@@ -1405,17 +1678,33 @@ final class TherapyLiveCallController: ObservableObject {
             } catch {
                 await MainActor.run {
                     let message = Self.userFacingLiveError(error)
-                    self.state = .failed(message)
-                    self.errorMessage = message
-                    self.outputTranscript = "Gemini Live could not start. The text chat still works."
-                    self.toneFeedback.playFailedTone()
+                    self.markFailed(message, output: message)
                 }
                 await disconnect()
             }
         }
     }
 
-    func disconnect() async {
+    func retry(
+        therapist: Therapist,
+        history: [ChatMessage],
+        contextBrief: String?,
+        isVideoCall: Bool,
+        onCommitTurn: @escaping (_ userText: String, _ assistantText: String) -> Void
+    ) {
+        Task {
+            await disconnect(resetAfterFailure: true)
+            connect(
+                therapist: therapist,
+                history: history,
+                contextBrief: contextBrief,
+                isVideoCall: isVideoCall,
+                onCommitTurn: onCommitTurn
+            )
+        }
+    }
+
+    func disconnect(resetAfterFailure: Bool = false) async {
         let failed: Bool
         if case .failed = state {
             failed = true
@@ -1429,16 +1718,21 @@ final class TherapyLiveCallController: ObservableObject {
         await audioController?.stop()
         await liveSession?.close()
         flushCurrentTranscriptTurn()
-        if !failed {
+        if !failed || resetAfterFailure {
             toneFeedback.stop()
         }
         liveSession = nil
         liveModel = nil
         audioController = nil
-        if failed {
+        if failed && !resetAfterFailure {
             return
         }
         state = .idle
+        errorMessage = nil
+        if resetAfterFailure {
+            inputTranscript = ""
+            outputTranscript = "Calling..."
+        }
     }
 
     func toggleMute() {
@@ -1482,11 +1776,11 @@ final class TherapyLiveCallController: ObservableObject {
                     await session.sendAudioRealtime(try audioBuffer.luminaInt16Data())
                 }
             } catch {
+                let message = Self.userFacingLiveError(error)
                 await MainActor.run {
-                    let message = Self.userFacingLiveError(error)
-                    self?.state = .failed(message)
-                    self?.errorMessage = message
+                    self?.markFailed(message)
                 }
+                await self?.disconnect()
             }
         }
     }
@@ -1498,11 +1792,11 @@ final class TherapyLiveCallController: ObservableObject {
                     await self?.process(message, audio: audio)
                 }
             } catch {
+                let message = Self.userFacingLiveError(error)
                 await MainActor.run {
-                    let message = Self.userFacingLiveError(error)
-                    self?.state = .failed(message)
-                    self?.errorMessage = message
+                    self?.markFailed(message)
                 }
+                await self?.disconnect()
             }
         }
     }
@@ -1610,18 +1904,44 @@ final class TherapyLiveCallController: ObservableObject {
     private static func userFacingLiveError(_ error: Error) -> String {
         let raw = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         #if DEBUG
-        print("Lumia Gemini Live raw error: \(raw)")
+        print("Lumia Gemini Live session closed.")
         #endif
+        if GeminiService.isNetworkUnavailable(error) {
+            return GeminiService.networkUnavailableMessage
+        }
+        if raw.localizedCaseInsensitiveContains("Firebase AI Logic API") ||
+            raw.localizedCaseInsensitiveContains("has not been used") ||
+            raw.localizedCaseInsensitiveContains("disabled") {
+            return "Live voice is not available right now. Text chat still works."
+        }
+        if raw.localizedCaseInsensitiveContains("model") &&
+            (raw.localizedCaseInsensitiveContains("not found") || raw.localizedCaseInsensitiveContains("unsupported")) {
+            return "Live voice is not available right now. Text chat still works."
+        }
+        if raw.localizedCaseInsensitiveContains("quota") || raw.localizedCaseInsensitiveContains("rate") {
+            return "Live voice is temporarily limited. Try again later, or continue in text chat."
+        }
+        if raw.localizedCaseInsensitiveContains("unauthorized") || raw.localizedCaseInsensitiveContains("auth") {
+            return "Live voice needs a fresh sign-in. Text chat still works."
+        }
         if raw.localizedCaseInsensitiveContains("1008") || raw.localizedCaseInsensitiveContains("policy") {
             return "The live audio session closed unexpectedly. Please try again, or continue in text chat."
         }
         if raw.localizedCaseInsensitiveContains("permission") {
             return "Microphone access is needed for Live voice."
         }
-        if raw.localizedCaseInsensitiveContains("network") || raw.localizedCaseInsensitiveContains("websocket") {
+        if raw.localizedCaseInsensitiveContains("network") {
             return "Live voice lost its connection. Check the network and try again."
         }
-        return raw.isEmpty ? "Live voice is unavailable right now. Text chat still works." : raw
+        return "Live voice is unavailable right now. Text chat still works."
+    }
+
+    private func markFailed(_ message: String, output: String? = nil) {
+        state = .failed(message)
+        errorMessage = message
+        outputTranscript = output ?? message
+        toneFeedback.playFailedTone()
+        flushCurrentTranscriptTurn()
     }
 }
 
@@ -1659,6 +1979,7 @@ struct SelectionView: View {
                 TherapistDetailSelectionView(
                     therapist: selectedTherapist,
                     sessionCount: sessionCount(for: selectedTherapist),
+                    latestSession: latestSession(for: selectedTherapist),
                     onBack: {
                         withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.88)) {
                             self.selectedTherapist = nil
@@ -1666,34 +1987,46 @@ struct SelectionView: View {
                     },
                     onStart: {
                         onOpen(selectedTherapist)
+                    },
+                    onContinue: { session in
+                        onOpenSession(session)
                     }
                 )
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 16) {
-                        TherapySelectionHeader()
-                        TherapySafetyBoundaryCard()
-                        TherapistGuideSection(
-                            sessions: sessions,
-                            onSelect: { therapist in
-                                withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.86)) {
-                                    selectedTherapist = therapist
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        LazyVStack(spacing: 16) {
+                            TherapySelectionHeader()
+                            TherapySafetyBoundaryCard()
+                            TherapistGuideSection(
+                                sessions: sessions,
+                                onSelect: { therapist in
+                                    withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.86)) {
+                                        selectedTherapist = therapist
+                                    }
                                 }
-                            }
-                        )
-                        TherapyHistoryGroupsSection(
-                            groups: historyGroups,
-                            onOpenSession: onOpenSession,
-                            onArchiveSession: onArchiveSession,
-                            onDeleteSession: onDeleteSession
-                        )
+                            )
+                            TherapyHistoryGroupsSection(
+                                groups: historyGroups,
+                                onOpenSession: onOpenSession,
+                                onArchiveSession: onArchiveSession,
+                                onDeleteSession: onDeleteSession,
+                                onCollapseGroup: { groupID in
+                                    DispatchQueue.main.async {
+                                        withAnimation(.easeOut(duration: 0.18)) {
+                                            proxy.scrollTo(TherapyHistoryScrollAnchor.group(groupID), anchor: .top)
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                        .padding(.bottom, 36)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-                    .padding(.bottom, 36)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
                 }
-                .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
     }
@@ -1709,12 +2042,29 @@ struct SelectionView: View {
             ($0.therapistID == therapist.id || $0.id == therapist.id)
         }.count
     }
+
+    private func latestSession(for therapist: Therapist) -> ChatSession? {
+        sessions.values
+            .filter {
+                !$0.messages.isEmpty &&
+                $0.archivedAt == nil &&
+                ($0.therapistID == therapist.id || $0.id == therapist.id)
+            }
+            .sorted { $0.lastUpdated > $1.lastUpdated }
+            .first
+    }
 }
 
 private struct TherapistSessionGroup: Identifiable {
     let therapist: Therapist
     let sessions: [ChatSession]
     var id: String { therapist.id }
+}
+
+private enum TherapyHistoryScrollAnchor {
+    static func group(_ id: String) -> String {
+        "therapy-history-group-\(id)"
+    }
 }
 
 private struct TherapistGuideSection: View {
@@ -1759,6 +2109,7 @@ private struct TherapyHistoryGroupsSection: View {
     let onOpenSession: (ChatSession) -> Void
     let onArchiveSession: (ChatSession) -> Void
     let onDeleteSession: (ChatSession) -> Void
+    let onCollapseGroup: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1777,8 +2128,10 @@ private struct TherapyHistoryGroupsSection: View {
                             group: group,
                             onOpenSession: onOpenSession,
                             onArchiveSession: onArchiveSession,
-                            onDeleteSession: onDeleteSession
+                            onDeleteSession: onDeleteSession,
+                            onCollapse: { onCollapseGroup(group.id) }
                         )
+                        .id(TherapyHistoryScrollAnchor.group(group.id))
                     }
                 }
             }
@@ -1815,23 +2168,27 @@ private struct SectionHeaderLabel: View {
 
 private struct EmptyHistoryCard: View {
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .luminaFont(size: 14, weight: .black)
-                .foregroundStyle(Color.organicPrimary)
-                .frame(width: 34, height: 34)
-                .background(Color.organicPrimary.opacity(0.10))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .luminaFont(size: 14, weight: .black)
+                    .foregroundStyle(Color.organicPrimary)
+                    .frame(width: 34, height: 34)
+                    .background(Color.organicPrimary.opacity(0.10))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text("No saved conversations yet")
-                    .luminaFont(size: 13, weight: .black)
-                    .foregroundStyle(Color.organicForeground)
-                Text("Choose a guide above. Your sessions will be grouped here by doctor.")
-                    .luminaFont(size: 12)
-                    .foregroundStyle(Color.organicMutedFg)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("No saved conversations yet")
+                        .luminaFont(size: 13, weight: .black)
+                        .foregroundStyle(Color.organicForeground)
+                    Text("Choose a guide above. Your sessions will be grouped here by doctor.")
+                        .luminaFont(size: 12)
+                        .foregroundStyle(Color.organicMutedFg)
+                }
+                Spacer()
             }
-            Spacer()
+
+            TherapyGuideExampleCard()
         }
         .padding(13)
         .background(Color.organicCard)
@@ -1843,13 +2200,80 @@ private struct EmptyHistoryCard: View {
     }
 }
 
+private struct TherapyGuideExampleCard: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 7) {
+                Text("Example")
+                    .luminaFont(size: 9, weight: .black)
+                    .kerning(1.0)
+                    .textCase(.uppercase)
+                Spacer(minLength: 0)
+                Text("How a session can start")
+                    .luminaFont(size: 10, weight: .bold)
+            }
+            .foregroundStyle(Color.organicMutedFg)
+
+            VStack(alignment: .leading, spacing: 7) {
+                ExampleChatBubble(
+                    speaker: "You",
+                    text: "I keep replaying a conversation from work.",
+                    isGuide: false
+                )
+                ExampleChatBubble(
+                    speaker: "Dr. Willow",
+                    text: "Let’s separate what happened from what your mind added. What is one fact you feel sure about?",
+                    isGuide: true
+                )
+            }
+        }
+        .padding(12)
+        .background(Color.organicMuted.opacity(0.42))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private struct ExampleChatBubble: View {
+    let speaker: String
+    let text: String
+    let isGuide: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(speaker)
+                .luminaFont(size: 10, weight: .black)
+                .foregroundStyle(isGuide ? Color.organicPrimary : Color.organicMutedFg)
+                .frame(width: 58, alignment: .leading)
+            Text(text)
+                .luminaFont(size: 11, weight: .semibold)
+                .foregroundStyle(Color.organicForeground)
+                .lineSpacing(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct TherapistHistoryGroupCard: View {
     let group: TherapistSessionGroup
     let onOpenSession: (ChatSession) -> Void
     let onArchiveSession: (ChatSession) -> Void
     let onDeleteSession: (ChatSession) -> Void
+    let onCollapse: () -> Void
 
+    @State private var visibleLimit = 3
+    @State private var isPreparingCollapse = false
+
+    private let collapsedLimit = 3
+    private let expansionStep = 5
     private var accent: Color { Color(hex: group.therapist.accentHex) }
+    private var clampedVisibleLimit: Int { min(max(collapsedLimit, visibleLimit), group.sessions.count) }
+    private var remainingCount: Int { max(0, group.sessions.count - clampedVisibleLimit) }
+    private var isShowingOlder: Bool { clampedVisibleLimit > collapsedLimit }
+    private var visibleSessions: [ChatSession] {
+        Array(group.sessions.prefix(clampedVisibleLimit))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -1882,8 +2306,8 @@ private struct TherapistHistoryGroupCard: View {
                     .clipShape(Capsule())
             }
 
-            VStack(spacing: 8) {
-                ForEach(group.sessions) { session in
+            LazyVStack(spacing: 8) {
+                ForEach(visibleSessions) { session in
                     SwipeableSessionRow(
                         onArchive: { onArchiveSession(session) },
                         onDelete: { onDeleteSession(session) }
@@ -1893,6 +2317,58 @@ private struct TherapistHistoryGroupCard: View {
                         RecentTile(session: session, therapist: group.therapist)
                     }
                 }
+
+                if remainingCount > 0 {
+                    Button {
+                        showMore()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "chevron.down")
+                                .luminaFont(size: 10, weight: .black)
+                            Text(showMoreTitle)
+                                .luminaFont(size: 11, weight: .black)
+                            Spacer(minLength: 0)
+                            Text("\(clampedVisibleLimit)/\(group.sessions.count)")
+                                .luminaFont(size: 10, weight: .bold)
+                                .foregroundStyle(Color.organicMutedFg.opacity(0.82))
+                        }
+                        .foregroundStyle(accent)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(accent.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isPreparingCollapse)
+                    .accessibilityLabel("Show \(remainingCount) older conversations")
+                }
+
+                if isShowingOlder {
+                    Button {
+                        collapseToRecent()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "chevron.up")
+                                .luminaFont(size: 10, weight: .black)
+                            Text(isPreparingCollapse ? "Returning..." : "Show fewer")
+                                .luminaFont(size: 11, weight: .black)
+                            Spacer(minLength: 0)
+                            Text("Recent \(collapsedLimit)")
+                                .luminaFont(size: 10, weight: .bold)
+                                .foregroundStyle(Color.organicMutedFg.opacity(0.82))
+                        }
+                        .foregroundStyle(Color.organicMutedFg)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.organicMuted.opacity(0.56))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isPreparingCollapse)
+                    .accessibilityLabel("Collapse older conversations")
+                }
             }
         }
         .padding(12)
@@ -1901,6 +2377,44 @@ private struct TherapistHistoryGroupCard: View {
         .overlay {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .strokeBorder(accent.opacity(0.16), lineWidth: 1)
+        }
+        .onChange(of: group.sessions.count) { newCount in
+            visibleLimit = min(max(collapsedLimit, visibleLimit), max(collapsedLimit, newCount))
+        }
+    }
+
+    private var showMoreTitle: String {
+        let nextCount = min(expansionStep, remainingCount)
+        if clampedVisibleLimit <= collapsedLimit {
+            return "Show \(nextCount) older"
+        }
+        return "Show \(nextCount) more"
+    }
+
+    private func showMore() {
+        guard !isPreparingCollapse else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            visibleLimit = min(group.sessions.count, clampedVisibleLimit + expansionStep)
+        }
+    }
+
+    private func collapseToRecent() {
+        guard !isPreparingCollapse else { return }
+        isPreparingCollapse = true
+        onCollapse()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                visibleLimit = collapsedLimit
+                isPreparingCollapse = false
+            }
+            DispatchQueue.main.async {
+                onCollapse()
+            }
         }
     }
 }
@@ -2143,8 +2657,10 @@ private struct TherapySafetyBoundaryCard: View {
 private struct TherapistDetailSelectionView: View {
     let therapist: Therapist
     let sessionCount: Int
+    let latestSession: ChatSession?
     let onBack: () -> Void
     let onStart: () -> Void
+    let onContinue: (ChatSession) -> Void
 
     private var accent: Color { Color(hex: therapist.accentHex) }
     private var detailPoints: [TherapistDetailPoint] {
@@ -2281,22 +2797,56 @@ private struct TherapistDetailSelectionView: View {
                     }
                 }
 
-                Button(action: onStart) {
-                    HStack(spacing: 9) {
-                        Image(systemName: sessionCount > 0 ? "arrow.right.message.fill" : "plus.bubble.fill")
-                            .luminaFont(size: 15, weight: .black)
-                        Text(sessionCount > 0 ? "Continue with \(therapist.name)" : "Start with \(therapist.name)")
-                            .luminaFont(size: 15, weight: .black)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
+                VStack(alignment: .leading, spacing: 10) {
+                    SectionHeaderLabel(
+                        icon: "arrow.triangle.branch",
+                        title: "BEGIN",
+                        count: latestSession == nil ? "1" : "2"
+                    )
+
+                    Button(action: onStart) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "plus.bubble.fill")
+                                .luminaFont(size: 17, weight: .black)
+                                .frame(width: 34, height: 34)
+                                .background(Color.white.opacity(0.16))
+                                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Start new session")
+                                    .luminaFont(size: 15, weight: .black)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+                                Text("Begin fresh with \(therapist.name)")
+                                    .luminaFont(size: 11, weight: .bold)
+                                    .foregroundStyle(Color.organicPrimaryFg.opacity(0.78))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+                            }
+
+                            Spacer(minLength: 0)
+
+                            Image(systemName: "arrow.right")
+                                .luminaFont(size: 13, weight: .black)
+                        }
+                        .foregroundStyle(Color.organicPrimaryFg)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(accent)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     }
-                    .foregroundStyle(Color.organicPrimaryFg)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(accent)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Start a new session with \(therapist.name)")
+
+                    if let latestSession {
+                        TherapistContinuePreviousCard(
+                            session: latestSession,
+                            therapist: therapist,
+                            accent: accent,
+                            onContinue: { onContinue(latestSession) }
+                        )
+                    }
                 }
-                .buttonStyle(.plain)
 
                 TherapySafetyBoundaryCard()
             }
@@ -2305,6 +2855,65 @@ private struct TherapistDetailSelectionView: View {
             .padding(.bottom, 36)
         }
         .modifier(NativeEdgeBackSwipeModifier(onBack: onBack))
+    }
+}
+
+private struct TherapistContinuePreviousCard: View {
+    let session: ChatSession
+    let therapist: Therapist
+    let accent: Color
+    let onContinue: () -> Void
+
+    private var timeAgo: String {
+        let delta = max(0, Date().timeIntervalSince1970 - session.lastUpdated)
+        if delta < 3_600 { return "\(max(1, Int(delta / 60)))m ago" }
+        if delta < 86_400 { return "\(Int(delta / 3_600))h ago" }
+        return "\(Int(delta / 86_400))d ago"
+    }
+
+    var body: some View {
+        Button(action: onContinue) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "arrow.uturn.left.circle.fill")
+                    .luminaFont(size: 18, weight: .black)
+                    .foregroundStyle(accent)
+                    .frame(width: 40, height: 40)
+                    .background(accent.opacity(0.11))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 7) {
+                        Text("Continue previous")
+                            .luminaFont(size: 13, weight: .black)
+                            .foregroundStyle(Color.organicForeground)
+                        Text(timeAgo)
+                            .luminaFont(size: 10, weight: .bold)
+                            .foregroundStyle(Color.organicMutedFg)
+                    }
+                    Text(session.lastMessagePreview.isEmpty ? "Saved conversation with \(therapist.name)." : session.lastMessagePreview)
+                        .luminaFont(size: 12, weight: .medium)
+                        .foregroundStyle(Color.organicMutedFg)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 0)
+
+                Image(systemName: "chevron.right")
+                    .luminaFont(size: 12, weight: .black)
+                    .foregroundStyle(accent.opacity(0.68))
+            }
+            .padding(13)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.organicCard)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(accent.opacity(0.20), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Continue previous conversation with \(therapist.name)")
     }
 }
 
@@ -2366,7 +2975,7 @@ struct TherapistTile: View {
                         .luminaFont(size: 15, weight: .bold, design: .serif)
                         .foregroundStyle(Color.organicForeground)
                     if hasSession {
-                        Text("Active")
+                        Text("Saved")
                             .luminaFont(size: 9, weight: .black)
                             .foregroundStyle(accent)
                             .padding(.horizontal, 6).padding(.vertical, 2)
@@ -2490,10 +3099,11 @@ struct ChatScreenView: View {
     let therapist: Therapist
     let messages: [ChatMessage]
     let sessionID: String?
-    @Binding var input: String
+    let userAvatarID: ProfileAvatarID
     let isLoading: Bool
     let showStats: Bool
     let conversationState: ConversationState
+    let isNetworkAvailable: Bool
     let usesJournalContext: Bool
     let usesGuideMemory: Bool
     let onBack: () -> Void
@@ -2502,9 +3112,9 @@ struct ChatScreenView: View {
     let onStartVoiceCall: () -> Void
     let onStartVideoCall: () -> Void
     @ObservedObject var speechInput: SpeechInputController
-    let onToggleSpeechInput: () -> Void
+    let speechInputRequestID: Int
     let onSelectConversationState: (ConversationState) -> Void
-    let onSend: () -> Void
+    let onSend: (String) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -2534,21 +3144,30 @@ struct ChatScreenView: View {
                 messages: messages,
                 sessionID: sessionID,
                 isLoading: isLoading,
-                therapist: therapist
+                therapist: therapist,
+                userAvatarID: userAvatarID
             )
+            .equatable()
             Divider()
             ChatInputView(
-                input: $input,
+                sessionID: sessionID,
                 isLoading: isLoading,
+                isNetworkAvailable: isNetworkAvailable,
                 therapist: therapist,
                 onStartVoiceCall: onStartVoiceCall,
                 onStartVideoCall: onStartVideoCall,
                 speechInput: speechInput,
-                onToggleSpeechInput: onToggleSpeechInput,
+                speechInputRequestID: speechInputRequestID,
                 onSend: onSend
             )
         }
         .background(Color.organicBackground)
+        .background {
+            KeyboardPrewarmView(triggerID: sessionID ?? therapist.id)
+                .frame(width: 1, height: 1)
+                .opacity(0.01)
+                .allowsHitTesting(false)
+        }
         .modifier(NativeEdgeBackSwipeModifier(onBack: onBack))
     }
 }
@@ -2660,11 +3279,11 @@ private struct TherapyContextNotice: View {
     private var title: String {
         switch (usesJournalContext, usesGuideMemory) {
         case (true, true):
-            return "Using journal themes and guide memory"
+            return "We can use recent notes and past sessions"
         case (false, true):
-            return "Using guide memory"
+            return "We can pick up where we left off"
         case (true, false):
-            return "Using journal themes"
+            return "Recent reflections can guide this"
         default:
             return ""
         }
@@ -2817,6 +3436,7 @@ struct MessageListView: View {
     let sessionID: String?
     let isLoading: Bool
     let therapist: Therapist
+    let userAvatarID: ProfileAvatarID
 
     private var scrollIdentity: String {
         [
@@ -2833,7 +3453,8 @@ struct MessageListView: View {
                 MessageListContentView(
                     messages: messages,
                     isLoading: isLoading,
-                    therapist: therapist
+                    therapist: therapist,
+                    userAvatarID: userAvatarID
                 )
             }
             .onAppear {
@@ -2842,10 +3463,8 @@ struct MessageListView: View {
             .onChange(of: scrollIdentity) { _ in
                 scrollToBottom(proxy: proxy, animated: false)
             }
-            .onChange(of: messages.count) { _ in
-                scrollToBottom(proxy: proxy)
-            }
-            .onChange(of: isLoading) { _ in
+            .onChange(of: isLoading) { loading in
+                guard loading else { return }
                 scrollToBottom(proxy: proxy)
             }
         }
@@ -2856,7 +3475,7 @@ struct MessageListView: View {
             proxy.scrollTo(MessageListBottomAnchor.bottom.rawValue, anchor: .bottom)
         }
 
-        let delays: [Double] = animated ? [0, 0.08, 0.22] : [0, 0.05, 0.18, 0.36]
+        let delays: [Double] = animated ? [0.02] : [0, 0.12]
         for delay in delays {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                 guard animated else {
@@ -2871,6 +3490,18 @@ struct MessageListView: View {
     }
 }
 
+extension MessageListView: Equatable {
+    static func == (lhs: MessageListView, rhs: MessageListView) -> Bool {
+        lhs.sessionID == rhs.sessionID
+            && lhs.isLoading == rhs.isLoading
+            && lhs.therapist.id == rhs.therapist.id
+            && lhs.userAvatarID == rhs.userAvatarID
+            && lhs.messages.count == rhs.messages.count
+            && lhs.messages.first?.id == rhs.messages.first?.id
+            && lhs.messages.last?.id == rhs.messages.last?.id
+    }
+}
+
 private enum MessageListBottomAnchor: String {
     case bottom
 }
@@ -2879,16 +3510,18 @@ struct MessageListContentView: View {
     let messages: [ChatMessage]
     let isLoading: Bool
     let therapist: Therapist
+    let userAvatarID: ProfileAvatarID
     private var accent: Color { Color(hex: therapist.accentHex) }
 
     var body: some View {
-        VStack(spacing: 16) {
+        LazyVStack(spacing: 16) {
             ForEach(messages) { msg in
                 ChatBubble(
                     message:   msg,
                     accent:    accent,
                     avatarUrl: therapist.avatarUrl,
-                    avatarLabel: therapist.name
+                    avatarLabel: therapist.name,
+                    userAvatarID: userAvatarID
                 )
                 .id(msg.id)
             }
@@ -2911,33 +3544,34 @@ struct MessageListContentView: View {
 // MARK: - Chat Input View
 
 struct ChatInputView: View {
-    @Binding var input: String
+    let sessionID: String?
     let isLoading: Bool
+    let isNetworkAvailable: Bool
     let therapist: Therapist
     let onStartVoiceCall: () -> Void
     let onStartVideoCall: () -> Void
     @ObservedObject var speechInput: SpeechInputController
-    let onToggleSpeechInput: () -> Void
-    let onSend: () -> Void
+    let speechInputRequestID: Int
+    let onSend: (String) -> Void
+    @State private var draft = ""
+    @State private var speechInputPrefix = ""
+
     private var accent: Color { Color(hex: therapist.accentHex) }
     private var canSend: Bool {
-        !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isLoading
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isLoading
     }
     private var canToggleSpeechInput: Bool {
         speechInput.isAvailable && (!isLoading || speechInput.isListening)
     }
     private var editorHeight: CGFloat {
-        input.contains("\n") || input.count > 72 ? 76 : 44
-    }
-    private var editorVerticalPadding: CGFloat {
-        editorHeight <= 44 ? 10 : 9
+        44
     }
     private var speechStatusText: String? {
         if let errorMessage = speechInput.errorMessage {
             return errorMessage
         }
         if speechInput.isListening {
-            return "Listening..."
+            return "Listening • Auto: \(speechInput.activeLanguageLabel)"
         }
         return nil
     }
@@ -2945,6 +3579,20 @@ struct ChatInputView: View {
     var body: some View {
         VStack(spacing: 0) {
             Divider().opacity(0.45)
+
+            if !isNetworkAvailable {
+                HStack(spacing: 7) {
+                    Image(systemName: "wifi.slash")
+                        .luminaFont(size: 11, weight: .black)
+                    Text("Offline. AI replies and calls will resume when you're connected.")
+                        .luminaFont(size: 11, weight: .bold)
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(Color.organicMutedFg)
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
+            }
 
             HStack(alignment: .bottom, spacing: 8) {
                 HStack(spacing: 4) {
@@ -2964,24 +3612,22 @@ struct ChatInputView: View {
                         isListening: speechInput.isListening,
                         isEnabled: canToggleSpeechInput,
                         accent: accent,
-                        action: onToggleSpeechInput
+                        action: toggleSpeechInput
                     )
                 }
                 .padding(4)
                 .background(Color.organicMuted.opacity(0.72))
                 .clipShape(Capsule())
 
-                TextField("Share what's on your mind...", text: $input, axis: .vertical)
-                    .luminaFont(size: 15, design: .serif)
-                    .foregroundStyle(Color.organicForeground)
-                    .tint(accent)
-                    .lineLimit(1...3)
-                    .submitLabel(.send)
-                    .onSubmit {
-                        if canSend { onSend() }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, editorVerticalPadding)
+                ChatComposerTextField(
+                    text: $draft,
+                    placeholder: "Share what's on your mind...",
+                    accentColor: UIColor(accent),
+                    textColor: UIColor(Color.organicForeground),
+                    placeholderColor: UIColor(Color.organicMutedFg).withAlphaComponent(0.52),
+                    onSubmit: submitDraft
+                )
+                .frame(minWidth: 0, maxWidth: .infinity)
                 .frame(height: editorHeight)
                 .background(Color.organicCard)
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -2992,7 +3638,7 @@ struct ChatInputView: View {
                 .shadow(color: .black.opacity(0.035), radius: 10, x: 0, y: 4)
 
                 Button {
-                    onSend()
+                    submitDraft()
                 } label: {
                     Image(systemName: "arrow.up")
                         .luminaFont(size: 16, weight: .black)
@@ -3005,6 +3651,7 @@ struct ChatInputView: View {
                 .disabled(!canSend)
                 .accessibilityLabel("Send message")
             }
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 14)
             .padding(.top, 10)
 
@@ -3016,6 +3663,7 @@ struct ChatInputView: View {
                     Text(speechStatusText)
                         .luminaFont(size: 11, weight: .semibold)
                         .foregroundStyle(speechInput.errorMessage == nil ? Color.organicMutedFg : Color.red.opacity(0.86))
+                        .lineLimit(1)
                     Spacer()
                 }
                 .padding(.horizontal, 18)
@@ -3043,6 +3691,261 @@ struct ChatInputView: View {
                 endPoint: .bottom
             )
         )
+        .onChange(of: speechInput.transcript) { transcript in
+            applySpeechTranscript(transcript)
+        }
+        .onChange(of: speechInputRequestID) { _ in
+            beginSpeechInputFromDraft()
+        }
+        .onChange(of: sessionID ?? therapist.id) { _ in
+            draft = ""
+            speechInputPrefix = ""
+        }
+    }
+
+    private func submitDraft() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !isLoading else { return }
+        if speechInput.isListening {
+            speechInput.stop()
+        }
+        draft = ""
+        speechInputPrefix = ""
+        onSend(text)
+    }
+
+    private func toggleSpeechInput() {
+        if speechInput.isListening {
+            speechInput.stop()
+        } else {
+            beginSpeechInputFromDraft()
+        }
+    }
+
+    private func beginSpeechInputFromDraft() {
+        guard !speechInput.isListening else { return }
+        speechInputPrefix = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        speechInput.start(preferredText: speechInputPrefix)
+    }
+
+    private func applySpeechTranscript(_ transcript: String) {
+        guard !transcript.isEmpty else { return }
+        let prefix = speechInputPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = prefix.isEmpty ? transcript : "\(prefix) \(transcript)"
+    }
+}
+
+private struct ChatComposerTextField: UIViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let accentColor: UIColor
+    let textColor: UIColor
+    let placeholderColor: UIColor
+    let onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeUIView(context: Context) -> UITextField {
+        let textField = ChatComposerUIKitTextField()
+        textField.delegate = context.coordinator
+        textField.backgroundColor = .clear
+        textField.borderStyle = .none
+        textField.font = UIFont.systemFont(ofSize: 15, weight: .regular)
+        textField.textColor = textColor
+        textField.tintColor = accentColor
+        textField.returnKeyType = .send
+        textField.textContentType = .none
+        textField.autocorrectionType = .no
+        textField.spellCheckingType = .no
+        textField.smartDashesType = .no
+        textField.smartQuotesType = .no
+        textField.smartInsertDeleteType = .no
+        textField.autocapitalizationType = .sentences
+        textField.clearButtonMode = .never
+        textField.clipsToBounds = true
+        textField.adjustsFontSizeToFitWidth = false
+        textField.minimumFontSize = 15
+        textField.keyboardType = .default
+        textField.enablesReturnKeyAutomatically = false
+        textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textField.inputAssistantItem.leadingBarButtonGroups = []
+        textField.inputAssistantItem.trailingBarButtonGroups = []
+        if #available(iOS 17.0, *) {
+            textField.inlinePredictionType = .no
+        }
+
+        textField.attributedPlaceholder = NSAttributedString(
+            string: placeholder,
+            attributes: [.foregroundColor: placeholderColor]
+        )
+        textField.addTarget(context.coordinator, action: #selector(Coordinator.textDidChange(_:)), for: .editingChanged)
+
+        return textField
+    }
+
+    func updateUIView(_ textField: UITextField, context: Context) {
+        context.coordinator.parent = self
+
+        if textField.text != text, textField.markedTextRange == nil {
+            textField.text = text
+        }
+
+        if textField.textColor != textColor {
+            textField.textColor = textColor
+        }
+        if textField.tintColor != accentColor {
+            textField.tintColor = accentColor
+        }
+        textField.attributedPlaceholder = NSAttributedString(
+            string: placeholder,
+            attributes: [.foregroundColor: placeholderColor]
+        )
+    }
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var parent: ChatComposerTextField
+        private var pendingText: String?
+        private var isTextSyncScheduled = false
+
+        init(_ parent: ChatComposerTextField) {
+            self.parent = parent
+        }
+
+        @objc func textDidChange(_ textField: UITextField) {
+            guard textField.markedTextRange == nil else { return }
+            scheduleTextSync(textField.text ?? "")
+        }
+
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            pendingText = nil
+            isTextSyncScheduled = false
+            parent.text = textField.text ?? ""
+        }
+
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            pendingText = nil
+            isTextSyncScheduled = false
+            parent.text = textField.text ?? ""
+            parent.onSubmit()
+            return false
+        }
+
+        func textField(
+            _ textField: UITextField,
+            shouldChangeCharactersIn range: NSRange,
+            replacementString string: String
+        ) -> Bool {
+            string != "\n"
+        }
+
+        private func scheduleTextSync(_ text: String) {
+            pendingText = text
+            guard !isTextSyncScheduled else { return }
+            isTextSyncScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.isTextSyncScheduled = false
+                guard let text = self.pendingText else { return }
+                self.pendingText = nil
+                self.parent.text = text
+            }
+        }
+    }
+}
+
+private final class ChatComposerUIKitTextField: UITextField {
+    private let horizontalPadding: CGFloat = 16
+
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: UIView.noIntrinsicMetric, height: super.intrinsicContentSize.height)
+    }
+
+    override func textRect(forBounds bounds: CGRect) -> CGRect {
+        bounds.insetBy(dx: horizontalPadding, dy: 0)
+    }
+
+    override func editingRect(forBounds bounds: CGRect) -> CGRect {
+        bounds.insetBy(dx: horizontalPadding, dy: 0)
+    }
+
+    override func placeholderRect(forBounds bounds: CGRect) -> CGRect {
+        bounds.insetBy(dx: horizontalPadding, dy: 0)
+    }
+}
+
+private struct KeyboardPrewarmView: UIViewRepresentable {
+    let triggerID: String
+
+    func makeUIView(context: Context) -> KeyboardPrewarmHostView {
+        KeyboardPrewarmHostView()
+    }
+
+    func updateUIView(_ uiView: KeyboardPrewarmHostView, context: Context) {
+        uiView.schedulePrewarm(triggerID: triggerID)
+    }
+}
+
+private final class KeyboardPrewarmHostView: UIView {
+    private static var warmedTriggerIDs = Set<String>()
+    private let textField = UITextField(frame: CGRect(x: -1000, y: -1000, width: 1, height: 1))
+    private var scheduledTriggerID: String?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        alpha = 0.01
+        isUserInteractionEnabled = false
+        configureTextField()
+        addSubview(textField)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        textField.frame = CGRect(x: -1000, y: -1000, width: 1, height: 1)
+    }
+
+    func schedulePrewarm(triggerID: String) {
+        guard scheduledTriggerID != triggerID else { return }
+        scheduledTriggerID = triggerID
+        guard !Self.warmedTriggerIDs.contains(triggerID) else { return }
+        Self.warmedTriggerIDs.insert(triggerID)
+
+        // iOS can do expensive keyboard service setup on the first responder change.
+        // Warm it after the chat transition so the user's first tap does less work.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            guard let self, self.window != nil else { return }
+            _ = UITextInputMode.activeInputModes.compactMap(\.primaryLanguage)
+            self.textField.becomeFirstResponder()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) { [weak self] in
+                self?.textField.resignFirstResponder()
+            }
+        }
+    }
+
+    private func configureTextField() {
+        textField.alpha = 0.01
+        textField.isUserInteractionEnabled = false
+        textField.backgroundColor = .clear
+        textField.borderStyle = .none
+        textField.textContentType = .none
+        textField.autocorrectionType = .no
+        textField.spellCheckingType = .no
+        textField.smartDashesType = .no
+        textField.smartQuotesType = .no
+        textField.smartInsertDeleteType = .no
+        textField.keyboardType = .default
+        textField.inputAssistantItem.leadingBarButtonGroups = []
+        textField.inputAssistantItem.trailingBarButtonGroups = []
+        textField.inputView = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+        if #available(iOS 17.0, *) {
+            textField.inlinePredictionType = .no
+        }
     }
 }
 
@@ -3104,6 +4007,9 @@ struct TherapyCallView: View {
     let riskLevel: RiskLevel
     let contextBrief: String?
     let onCommitTurn: (_ userText: String, _ assistantText: String) -> Void
+    let onFallbackToVoiceInput: () -> Void
+    let onFallbackToText: () -> Void
+    let onRecordUsage: (_ seconds: Int) -> Void
     let onEnd: () -> Void
 
     @StateObject private var callSession = TherapyCallSessionController()
@@ -3160,6 +4066,7 @@ struct TherapyCallView: View {
 
                     CallConversationPanel(
                         accent: accent,
+                        therapistName: therapist.name,
                         liveState: liveController.state,
                         isMuted: liveController.isMuted,
                         inputTranscript: liveController.inputTranscript,
@@ -3167,6 +4074,9 @@ struct TherapyCallView: View {
                         isTranscriptExpanded: isTranscriptExpanded,
                         errorMessage: liveController.errorMessage,
                         onToggleMute: { liveController.toggleMute() },
+                        onRetry: retryLive,
+                        onUseVoiceInput: onFallbackToVoiceInput,
+                        onUseTextChat: onFallbackToText,
                         onToggleTranscript: {
                             withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
                                 isTranscriptExpanded.toggle()
@@ -3209,6 +4119,7 @@ struct TherapyCallView: View {
             }
         }
         .onDisappear {
+            onRecordUsage(elapsedSeconds)
             callSession.setVideoFrameHandler(nil)
             Task {
                 await liveController.disconnect()
@@ -3221,6 +4132,16 @@ struct TherapyCallView: View {
         min(max(availableHeight * 0.43, 300), 408)
     }
 
+    private func retryLive() {
+        liveController.retry(
+            therapist: therapist,
+            history: initialMessages,
+            contextBrief: contextBrief,
+            isVideoCall: isVideoCall,
+            onCommitTurn: onCommitTurn
+        )
+    }
+
     private var liveStageStatus: String {
         if liveController.isMuted { return "You are muted" }
         switch liveController.state {
@@ -3231,6 +4152,10 @@ struct TherapyCallView: View {
         case .connected:
             return "Connected and listening"
         case .failed:
+            if liveController.errorMessage?.localizedCaseInsensitiveContains("internet") == true ||
+                liveController.errorMessage?.localizedCaseInsensitiveContains("offline") == true {
+                return "Offline"
+            }
             return "Live voice is unavailable"
         }
     }
@@ -3442,6 +4367,7 @@ struct LocalVideoPreview: View {
 
 struct CallConversationPanel: View {
     let accent: Color
+    let therapistName: String
     let liveState: TherapyLiveState
     let isMuted: Bool
     let inputTranscript: String
@@ -3449,20 +4375,50 @@ struct CallConversationPanel: View {
     let isTranscriptExpanded: Bool
     let errorMessage: String?
     let onToggleMute: () -> Void
+    let onRetry: () -> Void
+    let onUseVoiceInput: () -> Void
+    let onUseTextChat: () -> Void
     let onToggleTranscript: () -> Void
     let onInterrupt: () -> Void
+
+    private var isFailed: Bool {
+        if case .failed = liveState { return true }
+        return false
+    }
+
+    private var isNetworkFailure: Bool {
+        guard let errorMessage else { return false }
+        return errorMessage.localizedCaseInsensitiveContains("internet") ||
+            errorMessage.localizedCaseInsensitiveContains("network") ||
+            errorMessage.localizedCaseInsensitiveContains("connection") ||
+            errorMessage.localizedCaseInsensitiveContains("offline")
+    }
 
     private var statusText: String {
         if isMuted { return "Muted" }
         if case .failed = liveState {
-            return "Live unavailable"
+            return isNetworkFailure ? "Offline" : "Voice off"
         }
         return liveState.label
     }
 
+    private var instructionText: String {
+        if isNetworkFailure {
+            return "Connect to the internet to use calls or AI replies."
+        }
+        if errorMessage != nil {
+            return "The call could not stay connected. End the call to continue in text chat."
+        }
+        return inputTranscript.isEmpty ? "Speak naturally. The mic is live unless muted." : inputTranscript
+    }
+
+    private var responseText: String {
+        errorMessage ?? outputTranscript
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Circle()
                     .fill(isMuted ? Color.red.opacity(0.88) : accent.opacity(0.86))
                     .frame(width: 8, height: 8)
@@ -3470,55 +4426,96 @@ struct CallConversationPanel: View {
                     .luminaFont(size: 9, weight: .black)
                     .foregroundStyle(Color.organicMutedFg)
                     .kerning(1.2)
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.74)
+                    .layoutPriority(1)
+
+                Spacer(minLength: 4)
+
                 Button(action: onToggleTranscript) {
                     HStack(spacing: 7) {
                         Image(systemName: isTranscriptExpanded ? "text.bubble.fill" : "text.bubble")
                             .luminaFont(size: 11, weight: .black)
                         Text("Transcript")
                             .luminaFont(size: 10, weight: .black)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.70)
                     }
                     .foregroundStyle(Color.organicForeground)
-                    .padding(.horizontal, 12)
-                    .frame(height: 38)
+                    .frame(width: 112, height: 38)
                     .background(isTranscriptExpanded ? accent.opacity(0.22) : Color.organicMuted.opacity(0.72))
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(isTranscriptExpanded ? "Hide transcript" : "Show transcript")
 
-                Button(action: onToggleMute) {
-                    HStack(spacing: 8) {
-                        Image(systemName: isMuted ? "mic.slash.fill" : "mic.fill")
-                            .luminaFont(size: 12, weight: .black)
-                        Text(isMuted ? "Muted" : "Live")
-                            .luminaFont(size: 13, weight: .black)
+                if isFailed {
+                    Button(action: onRetry) {
+                        HStack(spacing: 7) {
+                            Image(systemName: "arrow.clockwise")
+                                .luminaFont(size: 11, weight: .black)
+                            Text("Retry")
+                                .luminaFont(size: 12, weight: .black)
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(Color.organicForeground)
+                        .frame(width: 88, height: 38)
+                        .background(accent.opacity(0.18))
+                        .clipShape(Capsule())
                     }
-                    .foregroundStyle(isMuted ? Color.white : Color.organicForeground)
-                    .padding(.horizontal, 16)
-                    .frame(height: 38)
-                    .background(isMuted ? Color.red.opacity(0.86) : accent.opacity(0.22))
-                    .clipShape(Capsule())
+                    .buttonStyle(.plain)
+                } else {
+                    Button(action: onToggleMute) {
+                        HStack(spacing: 8) {
+                            Image(systemName: isMuted ? "mic.slash.fill" : "mic.fill")
+                                .luminaFont(size: 12, weight: .black)
+                            Text(isMuted ? "Muted" : "Live")
+                                .luminaFont(size: 13, weight: .black)
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(isMuted ? Color.white : Color.organicForeground)
+                        .frame(width: 92, height: 38)
+                        .background(isMuted ? Color.red.opacity(0.86) : accent.opacity(0.22))
+                        .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                Text(inputTranscript.isEmpty ? "Speak naturally. The mic is live unless muted." : inputTranscript)
+                Text(instructionText)
                     .luminaFont(size: 12, weight: .semibold)
-                    .foregroundStyle(inputTranscript.isEmpty ? Color.organicMutedFg : Color.organicForeground)
+                    .foregroundStyle(inputTranscript.isEmpty || errorMessage != nil ? Color.organicMutedFg : Color.organicForeground)
                     .lineLimit(2)
-                Text(errorMessage ?? outputTranscript)
+                Text(responseText)
                     .luminaFont(size: 14, weight: .bold)
                     .foregroundStyle(errorMessage == nil ? Color.organicForeground : Color(hex: 0xB94A5D))
                     .lineLimit(2)
+            }
+
+            if isFailed {
+                HStack(spacing: 9) {
+                    LiveFallbackButton(
+                        title: "Dictate",
+                        systemName: "waveform",
+                        accent: accent,
+                        action: onUseVoiceInput
+                    )
+                    LiveFallbackButton(
+                        title: "Text chat",
+                        systemName: "keyboard",
+                        accent: accent,
+                        action: onUseTextChat
+                    )
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             if isTranscriptExpanded {
                 VStack(alignment: .leading, spacing: 8) {
                     transcriptRow(title: "You", text: inputTranscript, fallback: "Waiting for your voice...")
                     Divider().background(Color.organicMutedFg.opacity(0.18))
-                    transcriptRow(title: "Doctor", text: errorMessage ?? outputTranscript, fallback: "Waiting for response...")
+                    transcriptRow(title: therapistName, text: responseText, fallback: "Waiting for response...")
                 }
                 .padding(12)
                 .background(Color.organicMuted.opacity(0.44))
@@ -3547,6 +4544,36 @@ struct CallConversationPanel: View {
                 .foregroundStyle(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.organicMutedFg : Color.organicForeground)
                 .lineLimit(4)
         }
+    }
+}
+
+private struct LiveFallbackButton: View {
+    let title: String
+    let systemName: String
+    let accent: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Image(systemName: systemName)
+                    .luminaFont(size: 11, weight: .black)
+                Text(title)
+                    .luminaFont(size: 11, weight: .black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+            }
+            .foregroundStyle(Color.organicForeground)
+            .frame(maxWidth: .infinity)
+            .frame(height: 38)
+            .background(Color.organicMuted.opacity(0.76))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(accent.opacity(0.16), lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -4059,12 +5086,25 @@ struct ChatBubble: View {
     let accent:    Color
     let avatarUrl: String
     let avatarLabel: String
+    let userAvatarID: ProfileAvatarID
     private var isUser: Bool { message.role == .user }
+    private var renderedText: Text {
+        guard !isUser,
+              let attributed = try? AttributedString(
+                markdown: message.text,
+                options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+              )
+        else {
+            return Text(message.text)
+        }
+        return Text(attributed)
+    }
+
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
             if isUser { Spacer(minLength: 60) }
             if !isUser { MiniAvatar(url: avatarUrl, accent: accent, size: 32, radius: 10, label: avatarLabel) }
-            Text(message.text)
+            renderedText
                 .luminaFont(size: 15, design: .serif)
                 .foregroundStyle(isUser ? Color.white : Color.organicForeground)
                 .padding(.horizontal, 14).padding(.vertical, 10)
@@ -4072,10 +5112,7 @@ struct ChatBubble: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .shadow(color: .black.opacity(0.04), radius: 3, x: 0, y: 1)
             if isUser {
-                Image(systemName: "person.fill")
-                    .luminaFont(size: 13).foregroundStyle(Color.organicMutedFg)
-                    .frame(width: 32, height: 32).background(Color.organicMuted)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                ProfileAvatarImage(avatarID: userAvatarID, fallbackText: "", size: 32)
             }
             if !isUser { Spacer(minLength: 60) }
         }

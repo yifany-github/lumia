@@ -3,10 +3,22 @@ import Charts
 
 // MARK: - Dashboard
 
+struct JournalEditorRoute: Identifiable {
+    let id: String
+    let editingEntry: JournalEntry?
+
+    static func new() -> JournalEditorRoute {
+        JournalEditorRoute(id: "new-\(UUID().uuidString)", editingEntry: nil)
+    }
+
+    static func edit(_ entry: JournalEntry) -> JournalEditorRoute {
+        JournalEditorRoute(id: "edit-\(entry.id)-\(UUID().uuidString)", editingEntry: entry)
+    }
+}
+
 struct DashboardView: View {
     @EnvironmentObject var appState: AppState
-    @State private var showingEditor = false
-    @State private var editingEntry: JournalEntry? = nil
+    @State private var journalEditorRoute: JournalEditorRoute?
     @State private var showingProfile = false
     @State private var checkInMood = 5.0
     @State private var checkInStress = 5.0
@@ -65,9 +77,13 @@ struct DashboardView: View {
                 VStack(spacing: 16) {
                     DashboardHeroView(
                         userName: appState.userName,
+                        avatarID: appState.profileAvatarID,
                         latestMood: latestEntry?.mood,
                         context: appState.wellbeingContext,
-                        onOpenProfile: { showingProfile = true }
+                        hasPremiumAccess: appState.hasPremiumAccess,
+                        subscriptionDetail: appState.subscriptionState.displayDetail,
+                        onOpenMembership: { requireSignedIn { showingProfile = true } },
+                        onOpenProfile: { requireSignedIn { showingProfile = true } }
                     )
 
                     DailyCheckInCard(
@@ -76,24 +92,28 @@ struct DashboardView: View {
                         stressScore: $checkInStress,
                         note: $checkInNote,
                         onSave: {
-                            withAnimation(.easeInOut(duration: 0.18)) {
-                                appState.recordDailyCheckIn(
-                                    moodScore: Int(checkInMood.rounded()),
-                                    stressScore: Int(checkInStress.rounded()),
-                                    note: checkInNote
-                                )
+                            requireSignedIn {
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    appState.recordDailyCheckIn(
+                                        moodScore: Int(checkInMood.rounded()),
+                                        stressScore: Int(checkInStress.rounded()),
+                                        note: checkInNote
+                                    )
+                                }
                             }
                         },
                         onQuickSave: { mood, stress in
-                            withAnimation(.easeInOut(duration: 0.18)) {
-                                checkInMood = Double(mood)
-                                checkInStress = Double(stress)
-                                checkInNote = ""
-                                appState.recordDailyCheckIn(
-                                    moodScore: mood,
-                                    stressScore: stress,
-                                    note: nil
-                                )
+                            requireSignedIn {
+                                withAnimation(.easeInOut(duration: 0.18)) {
+                                    checkInMood = Double(mood)
+                                    checkInStress = Double(stress)
+                                    checkInNote = ""
+                                    appState.recordDailyCheckIn(
+                                        moodScore: mood,
+                                        stressScore: stress,
+                                        note: nil
+                                    )
+                                }
                             }
                         }
                     )
@@ -102,17 +122,21 @@ struct DashboardView: View {
                         entries: recentEntries,
                         latestSession: latestSession,
                         therapist: latestSessionTherapist,
-                        onOpenJournal: { appState.selectedTab = 1 },
+                        onOpenJournal: { requireSignedIn { appState.selectedTab = 1 } },
                         onNewReflection: {
-                            editingEntry = nil
-                            showingEditor = true
+                            requireSignedIn { journalEditorRoute = .new() }
                         },
                         onOpenTherapy: {
-                            if let therapist = latestSessionTherapist {
-                                appState.requestTherapy(with: therapist)
-                            } else {
-                                appState.selectedTab = 2
+                            requireSignedIn {
+                                if let therapist = latestSessionTherapist {
+                                    appState.requestTherapy(with: therapist)
+                                } else {
+                                    appState.selectedTab = 2
+                                }
                             }
+                        },
+                        onContinueTherapySession: { session in
+                            requireSignedIn { appState.requestTherapy(session: session) }
                         }
                     )
 
@@ -120,7 +144,8 @@ struct DashboardView: View {
 
                     HomeMembershipStatusCard(
                         hasPremiumAccess: appState.hasPremiumAccess,
-                        onOpenMembership: { showingProfile = true }
+                        allowance: appState.subscriptionAllowance,
+                        onOpenMembership: { requireSignedIn { showingProfile = true } }
                     )
 
                     Spacer(minLength: 28)
@@ -130,8 +155,9 @@ struct DashboardView: View {
                 .padding(.bottom, 44)
             }
         }
-        .sheet(isPresented: $showingEditor) {
-            JournalEditorView(editingEntry: editingEntry)
+        .sheet(item: $journalEditorRoute) { route in
+            JournalEditorView(editingEntry: route.editingEntry)
+                .id(route.id)
         }
         .sheet(isPresented: $showingProfile) {
             ProfileView()
@@ -149,6 +175,14 @@ struct DashboardView: View {
         checkInNote = checkIn.note ?? ""
     }
 
+    private func requireSignedIn(_ action: () -> Void) {
+        guard appState.isSignedIn else {
+            NotificationCenter.default.post(name: .luminaShowRegistrationGate, object: nil)
+            return
+        }
+        action()
+    }
+
     private func makeRecommendation() -> HomeRecommendation {
         if let followUp = appState.activeFollowUp {
             return HomeRecommendation(
@@ -164,20 +198,26 @@ struct DashboardView: View {
                     "You can snooze it instead of forcing it."
                 ],
                 action: {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        _ = appState.recordFollowUp(id: followUp.id, status: .completed)
+                    requireSignedIn {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            _ = appState.recordFollowUp(id: followUp.id, status: .completed)
+                        }
                     }
                 },
                 secondaryTitle: "Later",
                 secondaryAction: {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        _ = appState.snoozeFollowUp(id: followUp.id)
+                    requireSignedIn {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            _ = appState.snoozeFollowUp(id: followUp.id)
+                        }
                     }
                 },
                 quietTitle: "Too hard",
                 quietAction: {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        _ = appState.recordFollowUp(id: followUp.id, status: .tooHard)
+                    requireSignedIn {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            _ = appState.recordFollowUp(id: followUp.id, status: .tooHard)
+                        }
                     }
                 }
             )
@@ -193,20 +233,26 @@ struct DashboardView: View {
                 tint: tint(for: decision.kind),
                 reasons: decision.reasonCodes.map(reasonText(for:)),
                 action: {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        appState.acceptJITAIDecision(id: decision.id)
+                    requireSignedIn {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            appState.acceptJITAIDecision(id: decision.id)
+                        }
                     }
                 },
                 secondaryTitle: "Not now",
                 secondaryAction: {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        appState.dismissJITAIDecision(id: decision.id)
+                    requireSignedIn {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            appState.dismissJITAIDecision(id: decision.id)
+                        }
                     }
                 },
                 quietTitle: "Quiet today",
                 quietAction: {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        appState.suppressJITAIToday(id: decision.id)
+                    requireSignedIn {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            appState.suppressJITAIToday(id: decision.id)
+                        }
                     }
                 }
             )
@@ -225,7 +271,7 @@ struct DashboardView: View {
                     "Sanctuary keeps this to a short reset.",
                     "You can leave after one minute."
                 ],
-                action: { appState.selectedTab = 4 }
+                action: { requireSignedIn { appState.selectedTab = 4 } }
             )
         }
 
@@ -242,7 +288,7 @@ struct DashboardView: View {
                     "This is only a support suggestion, not a diagnosis.",
                     "A short reset can be enough."
                 ],
-                action: { appState.selectedTab = 4 }
+                action: { requireSignedIn { appState.selectedTab = 4 } }
             )
         }
 
@@ -259,7 +305,7 @@ struct DashboardView: View {
                     "Garden turns small care into visible progress.",
                     "There is no streak pressure here."
                 ],
-                action: { appState.selectedTab = 3 }
+                action: { requireSignedIn { appState.selectedTab = 3 } }
             )
         }
 
@@ -277,8 +323,7 @@ struct DashboardView: View {
                     "It gives the day a place to go."
                 ],
                 action: {
-                    editingEntry = nil
-                    showingEditor = true
+                    requireSignedIn { journalEditorRoute = .new() }
                 }
             )
         }
@@ -295,7 +340,7 @@ struct DashboardView: View {
                 "Sanctuary is the lowest-pressure place to start.",
                 "You can switch to Journal or Therapy anytime."
             ],
-            action: { appState.selectedTab = 4 }
+            action: { requireSignedIn { appState.selectedTab = 4 } }
         )
     }
 
@@ -440,8 +485,12 @@ private struct DashboardBackground: View {
 
 private struct DashboardHeroView: View {
     let userName: String
+    let avatarID: ProfileAvatarID
     let latestMood: MoodType?
     let context: WellbeingContextSnapshot
+    let hasPremiumAccess: Bool
+    let subscriptionDetail: String
+    let onOpenMembership: () -> Void
     let onOpenProfile: () -> Void
 
     private var greeting: String {
@@ -484,12 +533,31 @@ private struct DashboardHeroView: View {
 
                 Spacer()
 
-                Button(action: onOpenProfile) {
-                    Image(systemName: "person.crop.circle.fill")
-                        .luminaFont(size: 25, weight: .regular)
+                if hasPremiumAccess {
+                    Button(action: onOpenMembership) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .luminaFont(size: 11, weight: .black)
+                            Text("Plus")
+                                .luminaFont(size: 12, weight: .black)
+                        }
                         .foregroundColor(.organicPrimary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Circle())
+                        .padding(.horizontal, 10)
+                        .frame(height: 34)
+                        .background(Color.organicPrimary.opacity(0.12))
+                        .clipShape(Capsule())
+                        .overlay {
+                            Capsule()
+                                .strokeBorder(Color.organicPrimary.opacity(0.24), lineWidth: 1)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Lumia Plus active. \(subscriptionDetail)")
+                }
+
+                Button(action: onOpenProfile) {
+                    ProfileAvatarImage(avatarID: avatarID, fallbackText: "", size: 44)
+                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Open profile")
@@ -517,16 +585,15 @@ private struct DashboardHeroView: View {
 
 private struct HomeMembershipStatusCard: View {
     let hasPremiumAccess: Bool
+    let allowance: SubscriptionAllowance
     let onOpenMembership: () -> Void
 
     private var title: String {
-        hasPremiumAccess ? "Plus is active" : "Free plan"
+        hasPremiumAccess ? "Lumia Plus is active" : allowance.headline
     }
 
     private var message: String {
-        hasPremiumAccess
-            ? "Longer conversations and guide memory are available."
-            : "Free today: 20 replies and 5 minutes of voice."
+        hasPremiumAccess ? allowance.detail : allowance.detail
     }
 
     private var actionTitle: String {
@@ -558,6 +625,28 @@ private struct HomeMembershipStatusCard: View {
 
                 Spacer(minLength: 0)
 
+                VStack(alignment: .trailing, spacing: 4) {
+                    if hasPremiumAccess {
+                        Text("ACTIVE")
+                            .luminaFont(size: 9, weight: .black)
+                            .foregroundColor(.organicPrimary)
+                            .kerning(1.1)
+                            .padding(.horizontal, 8)
+                            .frame(height: 22)
+                            .background(Color.organicPrimary.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
+                    Text(allowance.aiUsageText)
+                        .luminaFont(size: 10, weight: .black)
+                        .foregroundColor(.organicMutedFg)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                    Text(allowance.voiceLimitText)
+                        .luminaFont(size: 10, weight: .black)
+                        .foregroundColor(hasPremiumAccess ? .organicPrimary : Color(hex: 0x7A5C16))
+                        .lineLimit(1)
+                }
+
                 Text(actionTitle)
                     .luminaFont(size: 12, weight: .black)
                     .foregroundColor(hasPremiumAccess ? .organicPrimary : Color(hex: 0x7A5C16))
@@ -587,6 +676,7 @@ private struct HomeStillOpenCard: View {
     let onOpenJournal: () -> Void
     let onNewReflection: () -> Void
     let onOpenTherapy: () -> Void
+    let onContinueTherapySession: (ChatSession) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -606,18 +696,27 @@ private struct HomeStillOpenCard: View {
                 .luminaFont(size: 12, weight: .medium)
                 .foregroundColor(.organicMutedFg)
 
+            if isFirstUse {
+                HomeFirstUseExamples(
+                    onNewReflection: onNewReflection,
+                    onOpenTherapy: onOpenTherapy
+                )
+            }
+
             VStack(spacing: 9) {
                 let clues = activityRows
                 if clues.isEmpty {
-                    HomeOpenThreadRow(
-                        icon: "leaf.fill",
-                        tint: .organicPrimary,
-                        title: "Nothing left open",
-                        subtitle: "Start fresh whenever you need to.",
-                        actionTitle: "Leave it",
-                        action: {}
-                    )
-                    .disabled(true)
+                    if !isFirstUse {
+                        HomeOpenThreadRow(
+                            icon: "leaf.fill",
+                            tint: .organicPrimary,
+                            title: "Nothing left open",
+                            subtitle: "Start fresh whenever you need to.",
+                            actionTitle: "Leave it",
+                            action: {}
+                        )
+                        .disabled(true)
+                    }
                 } else {
                     ForEach(clues) { clue in
                         HomeOpenThreadRow(
@@ -641,6 +740,10 @@ private struct HomeStillOpenCard: View {
         }
     }
 
+    private var isFirstUse: Bool {
+        entries.isEmpty && latestSession == nil
+    }
+
     private var activityRows: [HomeOpenThread] {
         var rows: [HomeOpenThread] = []
 
@@ -652,7 +755,7 @@ private struct HomeStillOpenCard: View {
                     title: "Last talked with \(therapist.name)",
                     subtitle: latestSession.lastMessagePreview.isEmpty ? "A recent conversation is saved." : latestSession.lastMessagePreview,
                     actionTitle: "Continue",
-                    action: onOpenTherapy
+                    action: { onContinueTherapySession(latestSession) }
                 )
             )
         }
@@ -668,7 +771,7 @@ private struct HomeStillOpenCard: View {
                     action: onOpenJournal
                 )
             )
-        } else if rows.isEmpty {
+        } else if rows.isEmpty && !isFirstUse {
             rows.append(
                 HomeOpenThread(
                     icon: "square.and.pencil",
@@ -682,6 +785,88 @@ private struct HomeStillOpenCard: View {
         }
 
         return Array(rows.prefix(2))
+    }
+}
+
+private struct HomeFirstUseExamples: View {
+    let onNewReflection: () -> Void
+    let onOpenTherapy: () -> Void
+
+    var body: some View {
+        VStack(spacing: 9) {
+            HomeFirstUseExampleRow(
+                icon: "book.pages.fill",
+                tint: .organicPrimary,
+                label: "Journal example",
+                title: "One honest sentence",
+                bodyText: "I felt tense after lunch. I do not need to solve it tonight.",
+                actionTitle: "Write one",
+                action: onNewReflection
+            )
+
+            HomeFirstUseExampleRow(
+                icon: "bubble.left.and.bubble.right.fill",
+                tint: .organicSecondary,
+                label: "Therapy example",
+                title: "Start with a thread",
+                bodyText: "Tell a guide what keeps repeating. They will help make it smaller.",
+                actionTitle: "Choose guide",
+                action: onOpenTherapy
+            )
+        }
+    }
+}
+
+private struct HomeFirstUseExampleRow: View {
+    let icon: String
+    let tint: Color
+    let label: String
+    let title: String
+    let bodyText: String
+    let actionTitle: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .top, spacing: 11) {
+                Image(systemName: icon)
+                    .luminaFont(size: 13, weight: .bold)
+                    .foregroundColor(tint)
+                    .frame(width: 34, height: 34)
+                    .background(tint.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(label)
+                        .luminaFont(size: 9, weight: .black)
+                        .foregroundColor(.organicMutedFg)
+                        .kerning(1.0)
+                        .textCase(.uppercase)
+                    Text(title)
+                        .luminaFont(size: 14, weight: .bold, design: .serif)
+                        .foregroundColor(.organicForeground)
+                    Text(bodyText)
+                        .luminaFont(size: 12, weight: .medium)
+                        .foregroundColor(.organicMutedFg)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer(minLength: 6)
+
+                Text(actionTitle)
+                    .luminaFont(size: 10, weight: .black)
+                    .foregroundColor(tint)
+                    .padding(.horizontal, 9)
+                    .frame(height: 28)
+                    .background(tint.opacity(0.10))
+                    .clipShape(Capsule())
+            }
+            .padding(13)
+            .background(Color.organicMuted.opacity(0.42))
+            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -1935,8 +2120,7 @@ private struct HomeReflectionRow: View {
 
 struct JournalRootView: View {
     @State private var selectedSection: JournalSection = .timeline
-    @State private var showingEditor = false
-    @State private var editingEntry: JournalEntry? = nil
+    @State private var journalEditorRoute: JournalEditorRoute?
 
     enum JournalSection: String, CaseIterable {
         case timeline = "Timeline"
@@ -1958,8 +2142,7 @@ struct JournalRootView: View {
                 VStack(spacing: 16) {
                     JournalHeaderView(
                         onNewReflection: {
-                            editingEntry = nil
-                            showingEditor = true
+                            journalEditorRoute = .new()
                         }
                     )
 
@@ -1967,7 +2150,7 @@ struct JournalRootView: View {
 
                     switch selectedSection {
                     case .timeline:
-                        TimelineTabView(showingEditor: $showingEditor, editingEntry: $editingEntry)
+                        TimelineTabView(editorRoute: $journalEditorRoute)
                     case .insights:
                         InsightsTabView()
                     }
@@ -1979,8 +2162,9 @@ struct JournalRootView: View {
                 .padding(.bottom, 118)
             }
         }
-        .sheet(isPresented: $showingEditor) {
-            JournalEditorView(editingEntry: editingEntry)
+        .sheet(item: $journalEditorRoute) { route in
+            JournalEditorView(editingEntry: route.editingEntry)
+                .id(route.id)
         }
     }
 }

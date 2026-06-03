@@ -51,12 +51,18 @@ struct JournalEditorView: View {
     private var canToggleSpeechInput: Bool {
         speechInput.isAvailable && !isAnalyzing && !isAnalyzingDistortions
     }
+    private var canUseReflectionAI: Bool {
+        appState.isNetworkAvailable && !trimmedContent.isEmpty && !isAnalyzing
+    }
+    private var canUsePrismAI: Bool {
+        appState.isNetworkAvailable && appState.canUse(.deepInsights) && !trimmedContent.isEmpty && !isAnalyzingDistortions
+    }
     private var speechStatusText: String? {
         if let errorMessage = speechInput.errorMessage {
             return errorMessage
         }
         if speechInput.isListening {
-            return "Listening..."
+            return "Listening • Auto: \(speechInput.activeLanguageLabel)"
         }
         return nil
     }
@@ -65,7 +71,7 @@ struct JournalEditorView: View {
         self.editingEntry = editingEntry
         if let e = editingEntry {
             _title = State(initialValue: e.title)
-            _content = State(initialValue: e.content)
+            _content = State(initialValue: e.displayContent)
             _selectedMood = State(initialValue: e.mood)
             _tags = State(initialValue: e.tags)
             _reflection = State(initialValue: e.reflection ?? "")
@@ -138,6 +144,8 @@ struct JournalEditorView: View {
                             }
                             .background(Color.organicMuted.opacity(0.98))
                             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+                            JournalMarkdownToolbar(onApply: applyMarkdownTool)
 
                             ZStack(alignment: .topLeading) {
                                 if content.isEmpty {
@@ -222,12 +230,12 @@ struct JournalEditorView: View {
                                 .luminaFont(size: 14, weight: .black)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 50)
-                                .background(trimmedContent.isEmpty ? Color.organicMuted.opacity(0.96) : Color.organicPrimary)
-                                .foregroundColor(trimmedContent.isEmpty ? .organicMutedFg.opacity(0.84) : .organicPrimaryFg)
+                                .background(canUseReflectionAI ? Color.organicPrimary : Color.organicMuted.opacity(0.96))
+                                .foregroundColor(canUseReflectionAI ? .organicPrimaryFg : .organicMutedFg.opacity(0.84))
                                 .clipShape(Capsule())
                             }
                             .buttonStyle(.plain)
-                            .disabled(trimmedContent.isEmpty || isAnalyzing)
+                            .disabled(!canUseReflectionAI)
 
                             Button(action: analyzePrism) {
                                 HStack {
@@ -236,17 +244,23 @@ struct JournalEditorView: View {
                                     } else {
                                         Image(systemName: "prism")
                                     }
-                                    Text(isAnalyzingDistortions ? "Reading..." : "Prism")
+                                    Text(isAnalyzingDistortions ? "Reading..." : (appState.canUse(.deepInsights) ? "Prism" : "Prism Plus"))
                                 }
                                 .luminaFont(size: 14, weight: .black)
                                 .frame(maxWidth: .infinity)
                                 .frame(height: 50)
-                                .background(trimmedContent.isEmpty ? Color.organicMuted.opacity(0.96) : Color.organicAccent)
-                                .foregroundColor(trimmedContent.isEmpty ? .organicMutedFg.opacity(0.82) : .organicForeground)
+                                .background(canUsePrismAI ? Color.organicAccent : Color.organicMuted.opacity(0.96))
+                                .foregroundColor(canUsePrismAI ? .organicForeground : .organicMutedFg.opacity(0.82))
                                 .clipShape(Capsule())
                             }
                             .buttonStyle(.plain)
-                            .disabled(trimmedContent.isEmpty || isAnalyzingDistortions)
+                            .disabled(!canUsePrismAI)
+                        }
+
+                        if !appState.isNetworkAvailable {
+                            LuminaInlineOfflineNotice(
+                                message: "AI reflection and Prism need a connection. You can still write and save this entry."
+                            )
                         }
 
                         if let speechStatusText {
@@ -257,6 +271,7 @@ struct JournalEditorView: View {
                                 Text(speechStatusText)
                                     .luminaFont(size: 11, weight: .semibold)
                                     .foregroundColor(speechInput.errorMessage == nil ? .organicMutedFg : Color.red.opacity(0.86))
+                                    .lineLimit(1)
                                 Spacer()
                             }
                             .padding(.horizontal, 4)
@@ -432,6 +447,10 @@ struct JournalEditorView: View {
 
     func analyzeEntry() {
         guard !trimmedContent.isEmpty else { return }
+        guard appState.isNetworkAvailable else {
+            errorMsg = GeminiService.networkUnavailableMessage
+            return
+        }
         speechInput.stop()
         isAnalyzing = true
         errorMsg = nil
@@ -452,7 +471,10 @@ struct JournalEditorView: View {
             } catch {
                 await MainActor.run {
                     isAnalyzing = false
-                    errorMsg = error.localizedDescription
+                    errorMsg = GeminiService.userFacingMessage(
+                        for: error,
+                        fallback: "Lumina could not reflect on this entry right now. Try again in a moment."
+                    )
                 }
             }
         }
@@ -460,6 +482,14 @@ struct JournalEditorView: View {
 
     func analyzePrism() {
         guard !trimmedContent.isEmpty else { return }
+        guard appState.canUse(.deepInsights) else {
+            errorMsg = "Prism reframes are included with Lumia Plus."
+            return
+        }
+        guard appState.isNetworkAvailable else {
+            errorMsg = GeminiService.networkUnavailableMessage
+            return
+        }
         speechInput.stop()
         isAnalyzingDistortions = true
         isPrismMode = true
@@ -475,7 +505,10 @@ struct JournalEditorView: View {
                 await MainActor.run {
                     isAnalyzingDistortions = false
                     isPrismMode = false
-                    errorMsg = error.localizedDescription
+                    errorMsg = GeminiService.userFacingMessage(
+                        for: error,
+                        fallback: "Prism could not reframe this entry right now. Try again in a moment."
+                    )
                 }
             }
         }
@@ -492,7 +525,7 @@ struct JournalEditorView: View {
             speechInput.stop()
         } else {
             speechInputPrefix = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            speechInput.start()
+            speechInput.start(preferredText: speechInputPrefix)
         }
     }
 
@@ -500,6 +533,37 @@ struct JournalEditorView: View {
         guard !transcript.isEmpty else { return }
         let prefix = speechInputPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
         content = prefix.isEmpty ? transcript : "\(prefix) \(transcript)"
+    }
+
+    func applyMarkdownTool(_ tool: JournalMarkdownTool) {
+        let snippet: String
+        switch tool {
+        case .heading:
+            snippet = "## Section title"
+        case .bold:
+            snippet = "**important note**"
+        case .bullets:
+            snippet = "- First point\n- Second point"
+        case .quote:
+            snippet = "> A sentence worth keeping."
+        }
+        appendMarkdownSnippet(snippet)
+    }
+
+    func appendMarkdownSnippet(_ snippet: String) {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            content = snippet
+            return
+        }
+
+        if content.hasSuffix("\n\n") {
+            content += snippet
+        } else if content.hasSuffix("\n") {
+            content += "\n\(snippet)"
+        } else {
+            content += "\n\n\(snippet)"
+        }
     }
 
     func saveEntry() {
@@ -568,6 +632,68 @@ private struct JournalEditorBackdrop: View {
                 endRadius: 420
             )
         }
+    }
+}
+
+enum JournalMarkdownTool: String, CaseIterable, Identifiable {
+    case heading
+    case bold
+    case bullets
+    case quote
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .heading: return "H2"
+        case .bold: return "B"
+        case .bullets: return "List"
+        case .quote: return "Quote"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .heading: return "textformat.size"
+        case .bold: return "bold"
+        case .bullets: return "list.bullet"
+        case .quote: return "quote.opening"
+        }
+    }
+}
+
+private struct JournalMarkdownToolbar: View {
+    let onApply: (JournalMarkdownTool) -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(JournalMarkdownTool.allCases) { tool in
+                Button {
+                    onApply(tool)
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: tool.systemImage)
+                            .luminaFont(size: 11, weight: .black)
+                        Text(tool.title)
+                            .luminaFont(size: 11, weight: .black)
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(.organicMutedFg)
+                    .padding(.horizontal, 10)
+                    .frame(height: 30)
+                    .background(Color.organicMuted.opacity(0.76))
+                    .clipShape(Capsule())
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(Color.organicBorder.opacity(0.62), lineWidth: 1)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .contain)
     }
 }
 

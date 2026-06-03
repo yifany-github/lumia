@@ -9,6 +9,10 @@ struct InsightsTabView: View {
     @State private var errorMsg: String? = nil
     @State private var lastGeneratedAt: TimeInterval?
     @State private var didCheckDailyGeneration = false
+
+    private var canUseDeepInsights: Bool {
+        appState.canUse(.deepInsights)
+    }
     
     var body: some View {
         VStack(spacing: 20) {
@@ -95,7 +99,7 @@ struct InsightsTabView: View {
                     Text("Today’s pattern")
                         .luminaFont(size: 23, weight: .bold, design: .serif)
                         .foregroundColor(.organicForeground)
-                    Text("One saved summary for the day. Refresh only when useful.")
+                    Text(canUseDeepInsights ? "One saved summary for the day. Refresh only when useful." : "Plus keeps a daily pattern across recent entries.")
                         .luminaFont(size: 13, weight: .medium)
                         .foregroundColor(.organicMutedFg)
                         .lineSpacing(3)
@@ -109,7 +113,13 @@ struct InsightsTabView: View {
                 InsightHintRow(icon: "arrow.clockwise", text: "Refresh when useful")
             }
 
-            generateButton(title: "Find the pattern")
+            if !appState.isNetworkAvailable {
+                LuminaInlineOfflineNotice(
+                    message: "Patterns need a connection. Your saved journal stays available offline."
+                )
+            }
+
+            generateButton(title: canUseDeepInsights ? "Find the pattern" : "Plus unlocks patterns")
 
             if let errorMsg {
                 Text(errorMsg)
@@ -211,6 +221,14 @@ struct InsightsTabView: View {
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
+            .disabled(!appState.isNetworkAvailable || isLoading)
+            .opacity(appState.isNetworkAvailable ? 1 : 0.62)
+
+            if !appState.isNetworkAvailable {
+                LuminaInlineOfflineNotice(
+                    message: "Refresh needs a connection. This saved pattern stays available."
+                )
+            }
 
             if let errorMsg {
                 Text(errorMsg)
@@ -230,11 +248,12 @@ struct InsightsTabView: View {
             .luminaFont(size: 15, weight: .bold)
             .frame(maxWidth: .infinity)
             .frame(height: 50)
-            .background(Color.organicSecondary)
-            .foregroundColor(colorScheme == .dark ? .organicBackground : .white)
+            .background((appState.isNetworkAvailable && canUseDeepInsights) ? Color.organicSecondary : Color.organicMuted.opacity(0.96))
+            .foregroundColor((appState.isNetworkAvailable && canUseDeepInsights) ? (colorScheme == .dark ? .organicBackground : .white) : .organicMutedFg.opacity(0.84))
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
+        .disabled(!appState.isNetworkAvailable || isLoading || !canUseDeepInsights)
     }
     
     func loadCachedInsights() {
@@ -249,17 +268,29 @@ struct InsightsTabView: View {
         guard !didCheckDailyGeneration else { return }
         didCheckDailyGeneration = true
         guard !appState.entries.isEmpty else { return }
+        guard canUseDeepInsights else { return }
         if let cached = appState.dailyJournalInsights,
            cached.dateKey == appState.journalInsightDateKey() {
             insights = cached.insights
             lastGeneratedAt = cached.generatedAt
             return
         }
+        guard appState.isNetworkAvailable else { return }
         fetchInsights(force: false)
     }
 
     func fetchInsights(force: Bool) {
         guard !appState.entries.isEmpty else { return }
+        guard canUseDeepInsights else {
+            isLoading = false
+            errorMsg = "Daily patterns are included with Lumia Plus."
+            return
+        }
+        guard appState.isNetworkAvailable else {
+            isLoading = false
+            errorMsg = GeminiService.networkUnavailableMessage
+            return
+        }
         if !force,
            let cached = appState.dailyJournalInsights,
            cached.dateKey == appState.journalInsightDateKey() {
@@ -286,7 +317,13 @@ struct InsightsTabView: View {
                     isLoading = false
                 }
             } catch {
-                await MainActor.run { isLoading = false; errorMsg = error.localizedDescription }
+                await MainActor.run {
+                    isLoading = false
+                    errorMsg = GeminiService.userFacingMessage(
+                        for: error,
+                        fallback: "Insights are unavailable right now. Try again in a moment."
+                    )
+                }
             }
         }
     }

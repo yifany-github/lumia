@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 46;
+	objectVersion = 54;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -18,10 +18,13 @@
 		44B887D232AC7A7BC984F80F /* SanctuaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB8D82345ADD1809AF081E7A /* SanctuaryView.swift */; };
 		4CC1C99BD9824AE9B823D387 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8EB708EB9B82409EB3A0FAEF /* XCTest.framework */; };
 		524D09FD54ED5E55FCCE04EE /* LuminaApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEB0121AD3C868E0738FA4A4 /* LuminaApp.swift */; };
+		58F1E5807E3A4F09A0E69BB1 /* RevenueCatSubscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58F1E57F7E3A4F09A0E69BB1 /* RevenueCatSubscriptionService.swift */; };
+		5B2E6A91A91C4DE0A12F7783 /* LumiaSubscriptions.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 5B2E6A90A91C4DE0A12F7783 /* LumiaSubscriptions.storekit */; };
 		5DDA0DAC1954BCF1DD21163C /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B97F1CA7112F6103E5C7CCB /* DashboardView.swift */; };
 		62B96E96451D3E602682B188 /* TimelineTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CE2F3702BFDC176639B1049 /* TimelineTabView.swift */; };
 		655B53A84DE07550C388E0FB /* InsightsTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4004FEE9DC7294F5AEFC8DE /* InsightsTabView.swift */; };
 		6ED2BE969E857F459C41A407 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = FAA4987B0DB05DB4CAA21547 /* FirebaseAuth */; };
+		6F4C5D0B44D84F1B9E771C4A /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = 6F4C5D0A44D84F1B9E771C4A /* RevenueCat */; };
 		73647AC52CE9180E56B130A4 /* FirebaseAILogic in Frameworks */ = {isa = PBXBuildFile; productRef = 9E81D620B4B0E01FE398C620 /* FirebaseAILogic */; };
 		76A470253461C87E169D9CF2 /* SharedComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C2141718320AB15A79A554B /* SharedComponents.swift */; };
 		76E8AAC22904562F3A2C44AE /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E353EDC128EB7E25F0ED318D /* ProfileView.swift */; };
@@ -32,7 +35,9 @@
 		A23957E50F3F75632E2568AB /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C3E66D61C3412D0680C7797 /* AppState.swift */; };
 		B7E3B1117F71442BA40C9001 /* TherapistSelectionUIKitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E3B1127F71442BA40C9002 /* TherapistSelectionUIKitView.swift */; };
 		C1FFBAD835A3B7DA2F3FBB20 /* Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5CE2B0E36252A4C6E74B62C /* Colors.swift */; };
+		C2878C53F47C4830B706B0BF /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 3B1641F97C5441ED8DE14BEF /* PrivacyInfo.xcprivacy */; };
 		C4F184D2F81A4A9E8F4B2C31 /* AppearanceMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F184D1F81A4A9E8F4B2C31 /* AppearanceMode.swift */; };
+		DDB128D82FCC0F2D00E5FCF6 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DDB128D72FCC0F2D00E5FCF6 /* StoreKit.framework */; };
 		E405BBD37D980D3FD028F794 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7698447FF7075EC28F131E37 /* ContentView.swift */; };
 		F21879FBF95ED40D1ECDB23D /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D133D9323B41BA89BE565A68 /* Foundation.framework */; };
 /* End PBXBuildFile section */
@@ -54,7 +59,10 @@
 		1CE2F3702BFDC176639B1049 /* TimelineTabView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TimelineTabView.swift; sourceTree = "<group>"; };
 		2B97F1CA7112F6103E5C7CCB /* DashboardView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		2E4F5F9235FEA1F98BF1C918 /* GeminiService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GeminiService.swift; sourceTree = "<group>"; };
+		3B1641F97C5441ED8DE14BEF /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		4DBB989F347373320737FBA4 /* GardenStandaloneView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GardenStandaloneView.swift; sourceTree = "<group>"; };
+		58F1E57F7E3A4F09A0E69BB1 /* RevenueCatSubscriptionService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RevenueCatSubscriptionService.swift; sourceTree = "<group>"; };
+		5B2E6A90A91C4DE0A12F7783 /* LumiaSubscriptions.storekit */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; path = LumiaSubscriptions.storekit; sourceTree = "<group>"; };
 		5C6E2154BF78A0802F0C6881 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		62B0BABC1F27609ED7025FD2 /* GardenTabView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GardenTabView.swift; sourceTree = "<group>"; };
 		676BB13A33B01906569790A2 /* FirebaseBackendService.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FirebaseBackendService.swift; sourceTree = "<group>"; };
@@ -73,6 +81,7 @@
 		C4F184D1F81A4A9E8F4B2C31 /* AppearanceMode.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppearanceMode.swift; sourceTree = "<group>"; };
 		D133D9323B41BA89BE565A68 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS14.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		D64C11E7996D0D8ACC6D6976 /* JournalEditorView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JournalEditorView.swift; sourceTree = "<group>"; };
+		DDB128D72FCC0F2D00E5FCF6 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk/System/Library/Frameworks/StoreKit.framework; sourceTree = DEVELOPER_DIR; };
 		E353EDC128EB7E25F0ED318D /* ProfileView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		FB8D82345ADD1809AF081E7A /* SanctuaryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SanctuaryView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -83,10 +92,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				F21879FBF95ED40D1ECDB23D /* Foundation.framework in Frameworks */,
+				DDB128D82FCC0F2D00E5FCF6 /* StoreKit.framework in Frameworks */,
 				6ED2BE969E857F459C41A407 /* FirebaseAuth in Frameworks */,
 				8C397934B2EF70489401457E /* FirebaseFirestore in Frameworks */,
 				73647AC52CE9180E56B130A4 /* FirebaseAILogic in Frameworks */,
 				855FAE8DB204E5B3E96DE83D /* GoogleSignIn in Frameworks */,
+				6F4C5D0B44D84F1B9E771C4A /* RevenueCat in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -113,6 +124,7 @@
 			children = (
 				2E4F5F9235FEA1F98BF1C918 /* GeminiService.swift */,
 				676BB13A33B01906569790A2 /* FirebaseBackendService.swift */,
+				58F1E57F7E3A4F09A0E69BB1 /* RevenueCatSubscriptionService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -126,6 +138,7 @@
 				764CCF2A6AB81C0DC6F32970 /* Theme */,
 				208870FF062F909F01C1B7D7 /* Views */,
 				5C6E2154BF78A0802F0C6881 /* Info.plist */,
+				3B1641F97C5441ED8DE14BEF /* PrivacyInfo.xcprivacy */,
 				0AEF1E846F43C07A6C7662BD /* Services */,
 				76B92E79EE8C439F6124C472 /* GoogleService-Info.plist */,
 			);
@@ -195,6 +208,7 @@
 			children = (
 				EAAA8DEA55CE9E8FAF120322 /* Products */,
 				99E85A323F8A5D9E5C5CC061 /* Frameworks */,
+				5B2E6A90A91C4DE0A12F7783 /* LumiaSubscriptions.storekit */,
 				1C44C61E4BA7B973D9AA87DE /* Lumina */,
 				3315854946B24CAE9B9A50F2 /* LuminaTests */,
 			);
@@ -203,6 +217,7 @@
 		99E85A323F8A5D9E5C5CC061 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				DDB128D72FCC0F2D00E5FCF6 /* StoreKit.framework */,
 				27CBB8D735FF4FBFF5E18534 /* iOS */,
 			);
 			name = Frameworks;
@@ -274,6 +289,7 @@
 				5DA4AC74BC66C67D5EDE09CE /* Sources */,
 				3378665B546CE8B369C821D5 /* Frameworks */,
 				ECE87BEB94AD7E912C4C6099 /* Resources */,
+				4A0C3B4A12A84C76A31FB05D /* Generate Binary Framework dSYMs */,
 			);
 			buildRules = (
 			);
@@ -285,6 +301,7 @@
 				A0B6E950214BE73E2A4C44E1 /* FirebaseFirestore */,
 				9E81D620B4B0E01FE398C620 /* FirebaseAILogic */,
 				D5613D762B1F5D27E0596934 /* GoogleSignIn */,
+				6F4C5D0A44D84F1B9E771C4A /* RevenueCat */,
 			);
 			productName = Lumina;
 			productReference = B3A675CEFC7CD65DB31AF52B /* Lumina.app */;
@@ -305,7 +322,11 @@
 						TestTargetID = 87612539F4A75E47A7884995;
 					};
 					87612539F4A75E47A7884995 = {
-						DevelopmentTeam = 23T658T4KC;
+						SystemCapabilities = {
+							com.apple.InAppPurchase = {
+								enabled = 1;
+							};
+						};
 					};
 				};
 			};
@@ -321,6 +342,7 @@
 			packageReferences = (
 				C8F759C020BDC49FDE4574ED /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				116E94361D3AF2EF42270037 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+				6F4C5D0944D84F1B9E771C4A /* XCRemoteSwiftPackageReference "purchases-ios" */,
 			);
 			productRefGroup = EAAA8DEA55CE9E8FAF120322 /* Products */;
 			projectDirPath = "";
@@ -346,10 +368,34 @@
 			files = (
 				0F6A6F6E2E604F3D88B7EA01 /* Assets.xcassets in Resources */,
 				A10B8555B1867F4DAF39F430 /* GoogleService-Info.plist in Resources */,
+				C2878C53F47C4830B706B0BF /* PrivacyInfo.xcprivacy in Resources */,
+				5B2E6A91A91C4DE0A12F7783 /* LumiaSubscriptions.storekit in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		4A0C3B4A12A84C76A31FB05D /* Generate Binary Framework dSYMs */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Generate Binary Framework dSYMs";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "sh \"${PROJECT_DIR}/Scripts/generate_binary_framework_dsyms.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		2220F242C9594B6B8EE81A9C /* Sources */ = {
@@ -383,6 +429,7 @@
 				E405BBD37D980D3FD028F794 /* ContentView.swift in Sources */,
 				40656DA737EAE7619EB09B04 /* GeminiService.swift in Sources */,
 				2BEFE39946268D7C57C4E077 /* FirebaseBackendService.swift in Sources */,
+				58F1E5807E3A4F09A0E69BB1 /* RevenueCatSubscriptionService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -407,7 +454,10 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Lumina/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.yifan.lumina;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
@@ -464,7 +514,8 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SWIFT_OPTIMIZATION_LEVEL = "-Owholemodule";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 			};
 			name = Release;
@@ -479,7 +530,10 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Lumina/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.yifan.lumina;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
@@ -494,7 +548,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.yifan.lumina.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -511,7 +569,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @loader_path/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.yifan.lumina.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
@@ -625,6 +687,14 @@
 				minimumVersion = 9.0.0;
 			};
 		};
+		6F4C5D0944D84F1B9E771C4A /* XCRemoteSwiftPackageReference "purchases-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/RevenueCat/purchases-ios.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.0.0;
+			};
+		};
 		C8F759C020BDC49FDE4574ED /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
@@ -636,25 +706,20 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		A0B6E950214BE73E2A4C44E1 /* FirebaseFirestore */ = {
+		6F4C5D0A44D84F1B9E771C4A /* RevenueCat */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = C8F759C020BDC49FDE4574ED /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseFirestore;
-		};
-		A16577DFB615C947CEF69CEA /* FirebaseStorage */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C8F759C020BDC49FDE4574ED /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseStorage;
-		};
-		A494DA0FF0E0B338275D11EA /* FirebaseAnalytics */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C8F759C020BDC49FDE4574ED /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseAnalytics;
+			package = 6F4C5D0944D84F1B9E771C4A /* XCRemoteSwiftPackageReference "purchases-ios" */;
+			productName = RevenueCat;
 		};
 		9E81D620B4B0E01FE398C620 /* FirebaseAILogic */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C8F759C020BDC49FDE4574ED /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseAILogic;
+		};
+		A0B6E950214BE73E2A4C44E1 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C8F759C020BDC49FDE4574ED /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
 		};
 		D5613D762B1F5D27E0596934 /* GoogleSignIn */ = {
 			isa = XCSwiftPackageProductDependency;

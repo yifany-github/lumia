@@ -131,29 +131,29 @@ final class DomainRegressionTests: XCTestCase {
         XCTAssertTrue(decoded.jitaiScheduledDecisionIDs.isEmpty)
     }
 
-    func testGardenDailyForageSpawnsStableItemsAndClaimAddsDew() throws {
+    func testGardenAmbientForageSpawnsStableItemsAndGatherAddsDew() throws {
         let store = GardenStore()
         store.waterDrops = 0
         let now = fixedDate(hour: 10)
 
-        store.refreshDailyForage(now: now)
+        store.refreshAmbientForage(now: now)
         let firstIDs = store.forageItems.map(\.id)
 
         XCTAssertEqual(store.forageItems.count, 3)
         XCTAssertEqual(store.activeForageItems.count, 3)
 
-        store.refreshDailyForage(now: now)
+        store.refreshAmbientForage(now: now)
         XCTAssertEqual(store.forageItems.map(\.id), firstIDs)
 
         let firstItem = try XCTUnwrap(store.forageItems.first)
-        let claimedItem = try XCTUnwrap(store.claimForageItem(id: firstItem.id, now: now))
+        let gatheredItem = try XCTUnwrap(store.gatherForageItem(id: firstItem.id, now: now))
 
-        XCTAssertEqual(store.waterDrops, claimedItem.reward)
+        XCTAssertEqual(store.waterDrops, gatheredItem.dewAmount)
         XCTAssertEqual(store.activeForageItems.count, 2)
-        XCTAssertTrue(store.forageItems.first { $0.id == firstItem.id }?.isClaimed == true)
+        XCTAssertTrue(store.forageItems.first { $0.id == firstItem.id }?.isGathered == true)
 
         let tomorrow = fixedDate(day: 11, hour: 10)
-        store.refreshDailyForage(now: tomorrow)
+        store.refreshAmbientForage(now: tomorrow)
         XCTAssertEqual(store.forageItems.count, 3)
         XCTAssertNotEqual(store.forageItems.map(\.id), firstIDs)
         XCTAssertTrue(store.forageItems.allSatisfy { $0.dayKey == GardenForageItem.dayKey(for: tomorrow) })
@@ -174,81 +174,81 @@ final class DomainRegressionTests: XCTestCase {
 
         XCTAssertEqual(decoded.waterDrops, 5)
         XCTAssertTrue(decoded.forageItems.isEmpty)
-        XCTAssertTrue(decoded.dailyEvents.isEmpty)
+        XCTAssertTrue(decoded.visitorInvitations.isEmpty)
         XCTAssertTrue(decoded.keepsakes.isEmpty)
         XCTAssertTrue(decoded.unlockedAreas.isEmpty)
         XCTAssertTrue(decoded.areaVisits.isEmpty)
         XCTAssertTrue(decoded.areaMilestones.isEmpty)
     }
 
-    func testGardenDailyEventSpawnsStableAndCompletesWithReward() throws {
+    func testGardenVisitorInvitationSpawnsStableAndSettlesWithDew() throws {
         let store = GardenStore()
         store.waterDrops = 0
         let now = fixedDate(hour: 9)
 
-        store.refreshDailyEvent(now: now)
-        let event = try XCTUnwrap(store.activeDailyEvent(on: now))
-        let eventID = event.id
+        store.refreshVisitorInvitation(now: now)
+        let invitation = try XCTUnwrap(store.activeVisitorInvitation(on: now))
+        let invitationID = invitation.id
 
-        store.refreshDailyEvent(now: now)
-        XCTAssertEqual(store.activeDailyEvent(on: now)?.id, eventID)
+        store.refreshVisitorInvitation(now: now)
+        XCTAssertEqual(store.activeVisitorInvitation(on: now)?.id, invitationID)
 
-        let acceptedEvent = try XCTUnwrap(store.acceptDailyEvent(id: eventID, now: now))
-        XCTAssertTrue(acceptedEvent.isAccepted)
-        XCTAssertNil(store.completeDailyEvent(id: eventID, progress: event.taskGoal - 1, now: now))
+        let acceptedInvitation = try XCTUnwrap(store.acceptVisitorInvitation(id: invitationID, now: now))
+        XCTAssertTrue(acceptedInvitation.isAccepted)
+        XCTAssertNil(store.settleVisitorInvitation(id: invitationID, progress: invitation.targetCount - 1, now: now))
 
-        let completedEvent = try XCTUnwrap(store.completeDailyEvent(id: eventID, progress: event.taskGoal, now: now))
-        XCTAssertTrue(completedEvent.isCompleted)
-        XCTAssertEqual(store.waterDrops, completedEvent.reward)
-        XCTAssertNil(store.activeDailyEvent(on: now))
+        let completedInvitation = try XCTUnwrap(store.settleVisitorInvitation(id: invitationID, progress: invitation.targetCount, now: now))
+        XCTAssertTrue(completedInvitation.isCompleted)
+        XCTAssertEqual(store.waterDrops, completedInvitation.dewAmount)
+        XCTAssertNil(store.activeVisitorInvitation(on: now))
         XCTAssertEqual(store.keepsakes.count, 1)
-        XCTAssertEqual(store.keepsakes.first?.kind, GardenKeepsakeKind.reward(for: completedEvent.visitor))
+        XCTAssertEqual(store.keepsakes.first?.kind, GardenKeepsakeKind.keepsake(for: completedInvitation.visitor))
         XCTAssertEqual(store.unlockedAreas.count, 1)
         XCTAssertEqual(
             store.unlockedAreas.first?.area,
-            GardenMapAreaKind.reward(for: GardenKeepsakeKind.reward(for: completedEvent.visitor))
+            GardenMapAreaKind.area(for: GardenKeepsakeKind.keepsake(for: completedInvitation.visitor))
         )
     }
 
-    func testGardenKeepsakeUnlocksOnlyOncePerVisitorRewardKind() throws {
+    func testGardenKeepsakeUnlocksOnlyOncePerVisitorKeepsakeKind() throws {
         let store = GardenStore()
         let now = fixedDate(hour: 9)
-        let firstEvent = GardenDailyEvent(
+        let firstInvitation = GardenVisitorInvitation(
             id: "visitor-a",
             dayKey: "2026-05-10",
             visitor: .mira,
-            taskKind: .tendPlot,
-            taskGoal: 1,
-            reward: 2,
+            invitationKind: .touchTrace,
+            targetCount: 1,
+            dewAmount: 2,
             x: 0.4,
             y: 0.4,
             spawnedAt: now.timeIntervalSince1970,
             acceptedAt: now.timeIntervalSince1970
         )
-        let secondEvent = GardenDailyEvent(
+        let secondInvitation = GardenVisitorInvitation(
             id: "visitor-b",
             dayKey: "2026-05-11",
             visitor: .mira,
-            taskKind: .gatherDew,
-            taskGoal: 1,
-            reward: 3,
+            invitationKind: .gatherDew,
+            targetCount: 1,
+            dewAmount: 3,
             x: 0.4,
             y: 0.4,
             spawnedAt: now.timeIntervalSince1970,
             acceptedAt: now.timeIntervalSince1970
         )
 
-        store.dailyEvents = [firstEvent, secondEvent]
+        store.visitorInvitations = [firstInvitation, secondInvitation]
 
-        XCTAssertNotNil(store.completeDailyEvent(id: firstEvent.id, progress: 1, now: now))
-        XCTAssertNotNil(store.completeDailyEvent(id: secondEvent.id, progress: 1, now: now))
+        XCTAssertNotNil(store.settleVisitorInvitation(id: firstInvitation.id, progress: 1, now: now))
+        XCTAssertNotNil(store.settleVisitorInvitation(id: secondInvitation.id, progress: 1, now: now))
         XCTAssertEqual(store.keepsakes.count, 1)
         XCTAssertEqual(store.keepsakes.first?.kind, .pathCharm)
         XCTAssertEqual(store.unlockedAreas.count, 1)
         XCTAssertEqual(store.unlockedAreas.first?.area, .pathNook)
     }
 
-    func testGardenMapAreaUnlocksOnlyOncePerKeepsakeReward() throws {
+    func testGardenMapAreaUnlocksOnlyOncePerKeepsake() throws {
         let store = GardenStore()
         let now = fixedDate(hour: 9)
 
@@ -256,7 +256,7 @@ final class DomainRegressionTests: XCTestCase {
             store.unlockKeepsake(
                 kind: .sunLantern,
                 visitor: .sol,
-                sourceEventID: "event-a",
+                sourceInvitationID: "event-a",
                 now: now
             )
         )
@@ -264,7 +264,7 @@ final class DomainRegressionTests: XCTestCase {
             store.unlockKeepsake(
                 kind: .sunLantern,
                 visitor: .sol,
-                sourceEventID: "event-b",
+                sourceInvitationID: "event-b",
                 now: now
             )
         )
@@ -275,7 +275,7 @@ final class DomainRegressionTests: XCTestCase {
         XCTAssertEqual(store.unlockedAreas.first?.area, .lanternGlade)
     }
 
-    func testGardenMapAreaVisitRewardsOnlyOncePerDay() throws {
+    func testGardenMapAreaVisitAddsDewOnlyOncePerDay() throws {
         let store = GardenStore()
         store.waterDrops = 0
         let now = fixedDate(hour: 9)
@@ -289,8 +289,8 @@ final class DomainRegressionTests: XCTestCase {
         )
 
         let result = try XCTUnwrap(store.completeMapAreaVisit(area: .pathNook, now: now))
-        XCTAssertEqual(result.visit.reward, GardenMapAreaKind.pathNook.dailyReward)
-        XCTAssertEqual(store.waterDrops, GardenMapAreaKind.pathNook.dailyReward)
+        XCTAssertEqual(result.visit.dewAmount, GardenMapAreaKind.pathNook.visitDewAmount)
+        XCTAssertEqual(store.waterDrops, GardenMapAreaKind.pathNook.visitDewAmount)
         XCTAssertNil(store.completeMapAreaVisit(area: .pathNook, now: now))
 
         let tomorrow = fixedDate(day: 11, hour: 9)
@@ -312,7 +312,7 @@ final class DomainRegressionTests: XCTestCase {
 
         let firstResult = try XCTUnwrap(store.completeMapAreaVisit(area: .pathNook, now: firstDay))
         XCTAssertTrue(firstResult.unlockedMilestones.isEmpty)
-        XCTAssertEqual(store.waterDrops, GardenMapAreaKind.pathNook.dailyReward)
+        XCTAssertEqual(store.waterDrops, GardenMapAreaKind.pathNook.visitDewAmount)
 
         let secondDay = fixedDate(day: 11, hour: 9)
         let secondResult = try XCTUnwrap(store.completeMapAreaVisit(area: .pathNook, now: secondDay))
@@ -320,10 +320,10 @@ final class DomainRegressionTests: XCTestCase {
 
         XCTAssertEqual(firstMilestone.stage, 1)
         XCTAssertEqual(firstMilestone.requiredVisits, 2)
-        XCTAssertEqual(firstMilestone.reward, 2)
+        XCTAssertEqual(firstMilestone.dewAmount, 2)
         XCTAssertEqual(store.areaMilestones.count, 1)
-        XCTAssertEqual(secondResult.totalReward, GardenMapAreaKind.pathNook.dailyReward + firstMilestone.reward)
-        XCTAssertEqual(store.waterDrops, GardenMapAreaKind.pathNook.dailyReward * 2 + firstMilestone.reward)
+        XCTAssertEqual(secondResult.totalDewAmount, GardenMapAreaKind.pathNook.visitDewAmount + firstMilestone.dewAmount)
+        XCTAssertEqual(store.waterDrops, GardenMapAreaKind.pathNook.visitDewAmount * 2 + firstMilestone.dewAmount)
 
         XCTAssertNil(store.completeMapAreaVisit(area: .pathNook, now: secondDay))
         XCTAssertEqual(store.areaMilestones.count, 1)
@@ -341,7 +341,7 @@ final class DomainRegressionTests: XCTestCase {
             XCTAssertEqual(definitions.map(\.stage), [1, 2, 3])
             XCTAssertEqual(Set(definitions.map(\.id)).count, definitions.count)
             XCTAssertEqual(definitions.map(\.requiredVisits), definitions.map(\.requiredVisits).sorted())
-            XCTAssertTrue(definitions.allSatisfy { $0.reward > 0 })
+            XCTAssertTrue(definitions.allSatisfy { $0.dewAmount > 0 })
         }
     }
 
@@ -355,28 +355,28 @@ final class DomainRegressionTests: XCTestCase {
         XCTAssertEqual(GardenMapAreaKind.archiveCorner.miniGameKind, .archive)
     }
 
-    func testGardenAreaQuestDefinitionsTrackMilestoneChains() {
+    func testGardenAreaChapterDefinitionsTrackMilestoneChains() {
         for area in GardenMapAreaKind.allCases {
-            let quests = area.questDefinitions
+            let chapters = area.chapterDefinitions
             let milestones = area.milestoneDefinitions
 
-            XCTAssertEqual(quests.count, milestones.count)
-            XCTAssertEqual(quests.map(\.stage), milestones.map(\.stage))
-            XCTAssertEqual(quests.map(\.requiredVisits), milestones.map(\.requiredVisits))
-            XCTAssertEqual(quests.map(\.reward), milestones.map(\.reward))
-            XCTAssertEqual(Set(quests.map(\.id)).count, quests.count)
-            XCTAssertTrue(quests.allSatisfy { !$0.title.isEmpty && !$0.objective.isEmpty && !$0.story.isEmpty })
-            XCTAssertEqual(area.questDefinition(stage: 2)?.stage, 2)
+            XCTAssertEqual(chapters.count, milestones.count)
+            XCTAssertEqual(chapters.map(\.stage), milestones.map(\.stage))
+            XCTAssertEqual(chapters.map(\.requiredVisits), milestones.map(\.requiredVisits))
+            XCTAssertEqual(chapters.map(\.dewAmount), milestones.map(\.dewAmount))
+            XCTAssertEqual(Set(chapters.map(\.id)).count, chapters.count)
+            XCTAssertTrue(chapters.allSatisfy { !$0.title.isEmpty && !$0.objective.isEmpty && !$0.story.isEmpty })
+            XCTAssertEqual(area.chapterDefinition(stage: 2)?.stage, 2)
         }
     }
 
-    func testGardenAreaMapEvolutionDefinitionsTrackQuestChapters() {
+    func testGardenAreaMapEvolutionDefinitionsTrackChapters() {
         for area in GardenMapAreaKind.allCases {
             let evolutionMarks = area.mapEvolutionDefinitions
-            let quests = area.questDefinitions
+            let chapters = area.chapterDefinitions
 
-            XCTAssertEqual(evolutionMarks.count, quests.count)
-            XCTAssertEqual(evolutionMarks.map(\.stage), quests.map(\.stage))
+            XCTAssertEqual(evolutionMarks.count, chapters.count)
+            XCTAssertEqual(evolutionMarks.map(\.stage), chapters.map(\.stage))
             XCTAssertEqual(Set(evolutionMarks.map(\.id)).count, evolutionMarks.count)
             XCTAssertTrue(evolutionMarks.allSatisfy { $0.scale >= 0.85 && $0.scale <= 1.15 })
             XCTAssertTrue(evolutionMarks.allSatisfy { abs($0.localXOffset) <= 64 })
@@ -396,13 +396,13 @@ final class DomainRegressionTests: XCTestCase {
             GardenMapAreaVisit(
                 area: .pathNook,
                 dayKey: "2026-05-12",
-                reward: GardenMapAreaKind.pathNook.dailyReward,
+                dewAmount: GardenMapAreaKind.pathNook.visitDewAmount,
                 completedAt: now.timeIntervalSince1970
             ),
             GardenMapAreaVisit(
                 area: .pathNook,
                 dayKey: "2026-05-13",
-                reward: GardenMapAreaKind.pathNook.dailyReward,
+                dewAmount: GardenMapAreaKind.pathNook.visitDewAmount,
                 completedAt: now.timeIntervalSince1970
             )
         ]
@@ -411,7 +411,7 @@ final class DomainRegressionTests: XCTestCase {
                 area: .pathNook,
                 stage: 1,
                 requiredVisits: 2,
-                reward: 2,
+                dewAmount: 2,
                 unlockedAt: now.timeIntervalSince1970
             )
         ]
@@ -428,15 +428,15 @@ final class DomainRegressionTests: XCTestCase {
         XCTAssertTrue(pathEntry.isUnlocked)
         XCTAssertEqual(pathEntry.visitCount, 2)
         XCTAssertEqual(pathEntry.completedChapterCount, 1)
-        XCTAssertEqual(pathEntry.totalChapterCount, GardenMapAreaKind.pathNook.questDefinitions.count)
-        XCTAssertEqual(pathEntry.completedQuests.first?.stage, 1)
-        XCTAssertEqual(pathEntry.nextQuest?.stage, 2)
+        XCTAssertEqual(pathEntry.totalChapterCount, GardenMapAreaKind.pathNook.chapterDefinitions.count)
+        XCTAssertEqual(pathEntry.completedChapters.first?.stage, 1)
+        XCTAssertEqual(pathEntry.nextChapter?.stage, 2)
         XCTAssertGreaterThan(pathEntry.progressFraction, 0)
 
         XCTAssertFalse(lockedEntry.isUnlocked)
         XCTAssertEqual(lockedEntry.visitCount, 0)
-        XCTAssertTrue(lockedEntry.completedQuests.isEmpty)
-        XCTAssertNil(lockedEntry.nextQuest)
+        XCTAssertTrue(lockedEntry.completedChapters.isEmpty)
+        XCTAssertNil(lockedEntry.nextChapter)
     }
 
     func testGardenAreaChapterMemoriesIncludeStoryAndMapChange() throws {
@@ -451,14 +451,14 @@ final class DomainRegressionTests: XCTestCase {
                 area: .archiveCorner,
                 stage: 1,
                 requiredVisits: 2,
-                reward: 2,
+                dewAmount: 2,
                 unlockedAt: now.timeIntervalSince1970
             ),
             GardenAreaMilestoneUnlock(
                 area: .archiveCorner,
                 stage: 2,
                 requiredVisits: 4,
-                reward: 4,
+                dewAmount: 4,
                 unlockedAt: now.timeIntervalSince1970
             )
         ]
@@ -477,7 +477,7 @@ final class DomainRegressionTests: XCTestCase {
         XCTAssertTrue(memories.allSatisfy { !$0.mapChangeDetail.isEmpty })
         XCTAssertEqual(memories.first?.evolution.stage, 1)
         XCTAssertEqual(memories.last?.evolution.area, .archiveCorner)
-        XCTAssertEqual(archiveEntry.nextQuest?.stage, 3)
+        XCTAssertEqual(archiveEntry.nextChapter?.stage, 3)
     }
 
     private func fixedDate(day: Int = 10, hour: Int) -> Date {

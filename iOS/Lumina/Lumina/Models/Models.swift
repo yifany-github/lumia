@@ -1426,7 +1426,7 @@ struct JournalEntry: Identifiable, Codable {
         date = try container.decode(String.self, forKey: .date)
         timestamp = try container.decode(TimeInterval.self, forKey: .timestamp)
         title = try container.decode(String.self, forKey: .title)
-        content = try container.decode(String.self, forKey: .content)
+        content = try container.decodeIfPresent(String.self, forKey: .content) ?? ""
         mood = try container.decode(MoodType.self, forKey: .mood)
         tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
         reflection = try container.decodeIfPresent(String.self, forKey: .reflection)
@@ -1437,6 +1437,25 @@ struct JournalEntry: Identifiable, Codable {
         anxietyLevel = try container.decodeIfPresent(Int.self, forKey: .anxietyLevel)
         therapyMemoryPolicy = try container.decodeIfPresent(JournalTherapyMemoryPolicy.self, forKey: .therapyMemoryPolicy)
         isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+    }
+}
+
+extension JournalEntry {
+    var displayContent: String {
+        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedContent.isEmpty {
+            return content
+        }
+
+        let fallbackPieces = [
+            summary,
+            reflection,
+            actionItem.map { "Next: \($0)" }
+        ]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return fallbackPieces.joined(separator: "\n\n")
     }
 }
 
@@ -1502,6 +1521,7 @@ struct Habit: Identifiable, Codable {
     var plantType: PlantType
     var growth: Int
     var sourceMicroPlanID: String? = nil
+    var sourceJournalEntryID: String? = nil
 }
 
 enum GardenDecorationType: String, CaseIterable, Identifiable, Codable {
@@ -1554,11 +1574,24 @@ struct GardenForageItem: Identifiable, Codable {
     let dayKey: String
     let x: Double
     let y: Double
-    let reward: Int
+    let dewAmount: Int
     let spawnedAt: TimeInterval
-    var claimedAt: TimeInterval?
+    var gatheredAt: TimeInterval?
 
-    var isClaimed: Bool { claimedAt != nil }
+    var isGathered: Bool { gatheredAt != nil }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case dayKey
+        case x
+        case y
+        case dewAmount
+        case reward
+        case spawnedAt
+        case gatheredAt
+        case claimedAt
+    }
 
     init(
         id: String,
@@ -1566,18 +1599,45 @@ struct GardenForageItem: Identifiable, Codable {
         dayKey: String,
         x: Double,
         y: Double,
-        reward: Int = 1,
+        dewAmount: Int = 1,
         spawnedAt: TimeInterval,
-        claimedAt: TimeInterval? = nil
+        gatheredAt: TimeInterval? = nil
     ) {
         self.id = id
         self.kind = kind
         self.dayKey = dayKey
         self.x = x
         self.y = y
-        self.reward = reward
+        self.dewAmount = dewAmount
         self.spawnedAt = spawnedAt
-        self.claimedAt = claimedAt
+        self.gatheredAt = gatheredAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        kind = try container.decodeIfPresent(GardenForageKind.self, forKey: .kind) ?? .dewMote
+        dayKey = try container.decode(String.self, forKey: .dayKey)
+        x = try container.decode(Double.self, forKey: .x)
+        y = try container.decode(Double.self, forKey: .y)
+        dewAmount = try container.decodeIfPresent(Int.self, forKey: .dewAmount)
+            ?? container.decodeIfPresent(Int.self, forKey: .reward)
+            ?? 1
+        spawnedAt = try container.decode(TimeInterval.self, forKey: .spawnedAt)
+        gatheredAt = try container.decodeIfPresent(TimeInterval.self, forKey: .gatheredAt)
+            ?? container.decodeIfPresent(TimeInterval.self, forKey: .claimedAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(dayKey, forKey: .dayKey)
+        try container.encode(x, forKey: .x)
+        try container.encode(y, forKey: .y)
+        try container.encode(dewAmount, forKey: .dewAmount)
+        try container.encode(spawnedAt, forKey: .spawnedAt)
+        try container.encodeIfPresent(gatheredAt, forKey: .gatheredAt)
     }
 
     static func dayKey(for date: Date, calendar: Calendar = .current) -> String {
@@ -1599,20 +1659,43 @@ enum GardenVisitorKind: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
 }
 
-enum GardenDailyEventTaskKind: String, CaseIterable, Identifiable, Codable {
+enum GardenVisitorInvitationKind: CaseIterable, Identifiable, Codable {
     case gatherDew
-    case tendPlot
+    case touchTrace
 
-    var id: String { rawValue }
+    var id: String {
+        switch self {
+        case .gatherDew: return "gatherDew"
+        case .touchTrace: return "touchTrace"
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        switch rawValue {
+        case "gatherDew":
+            self = .gatherDew
+        case "touchTrace", "keepTrace", "tendPlot":
+            self = .touchTrace
+        default:
+            self = .gatherDew
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(id)
+    }
 }
 
-struct GardenDailyEvent: Identifiable, Codable {
+struct GardenVisitorInvitation: Identifiable, Codable {
     let id: String
     let dayKey: String
     let visitor: GardenVisitorKind
-    let taskKind: GardenDailyEventTaskKind
-    let taskGoal: Int
-    let reward: Int
+    let invitationKind: GardenVisitorInvitationKind
+    let targetCount: Int
+    let dewAmount: Int
     let x: Double
     let y: Double
     let spawnedAt: TimeInterval
@@ -1624,13 +1707,31 @@ struct GardenDailyEvent: Identifiable, Codable {
     var isCompleted: Bool { completedAt != nil }
     var isDismissed: Bool { dismissedAt != nil }
 
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case dayKey
+        case visitor
+        case invitationKind
+        case taskKind
+        case targetCount
+        case taskGoal
+        case dewAmount
+        case reward
+        case x
+        case y
+        case spawnedAt
+        case acceptedAt
+        case completedAt
+        case dismissedAt
+    }
+
     init(
         id: String,
         dayKey: String,
         visitor: GardenVisitorKind,
-        taskKind: GardenDailyEventTaskKind,
-        taskGoal: Int,
-        reward: Int,
+        invitationKind: GardenVisitorInvitationKind,
+        targetCount: Int,
+        dewAmount: Int,
         x: Double,
         y: Double,
         spawnedAt: TimeInterval,
@@ -1641,9 +1742,9 @@ struct GardenDailyEvent: Identifiable, Codable {
         self.id = id
         self.dayKey = dayKey
         self.visitor = visitor
-        self.taskKind = taskKind
-        self.taskGoal = taskGoal
-        self.reward = reward
+        self.invitationKind = invitationKind
+        self.targetCount = targetCount
+        self.dewAmount = dewAmount
         self.x = x
         self.y = y
         self.spawnedAt = spawnedAt
@@ -1652,36 +1753,74 @@ struct GardenDailyEvent: Identifiable, Codable {
         self.dismissedAt = dismissedAt
     }
 
-    static func make(for date: Date, calendar: Calendar = .current) -> GardenDailyEvent {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        dayKey = try container.decode(String.self, forKey: .dayKey)
+        visitor = try container.decode(GardenVisitorKind.self, forKey: .visitor)
+        invitationKind = try container.decodeIfPresent(GardenVisitorInvitationKind.self, forKey: .invitationKind)
+            ?? container.decodeIfPresent(GardenVisitorInvitationKind.self, forKey: .taskKind)
+            ?? .gatherDew
+        targetCount = try container.decodeIfPresent(Int.self, forKey: .targetCount)
+            ?? container.decodeIfPresent(Int.self, forKey: .taskGoal)
+            ?? 1
+        dewAmount = try container.decodeIfPresent(Int.self, forKey: .dewAmount)
+            ?? container.decodeIfPresent(Int.self, forKey: .reward)
+            ?? 1
+        x = try container.decode(Double.self, forKey: .x)
+        y = try container.decode(Double.self, forKey: .y)
+        spawnedAt = try container.decode(TimeInterval.self, forKey: .spawnedAt)
+        acceptedAt = try container.decodeIfPresent(TimeInterval.self, forKey: .acceptedAt)
+        completedAt = try container.decodeIfPresent(TimeInterval.self, forKey: .completedAt)
+        dismissedAt = try container.decodeIfPresent(TimeInterval.self, forKey: .dismissedAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(dayKey, forKey: .dayKey)
+        try container.encode(visitor, forKey: .visitor)
+        try container.encode(invitationKind, forKey: .invitationKind)
+        try container.encode(targetCount, forKey: .targetCount)
+        try container.encode(dewAmount, forKey: .dewAmount)
+        try container.encode(x, forKey: .x)
+        try container.encode(y, forKey: .y)
+        try container.encode(spawnedAt, forKey: .spawnedAt)
+        try container.encodeIfPresent(acceptedAt, forKey: .acceptedAt)
+        try container.encodeIfPresent(completedAt, forKey: .completedAt)
+        try container.encodeIfPresent(dismissedAt, forKey: .dismissedAt)
+    }
+
+    static func make(for date: Date, calendar: Calendar = .current) -> GardenVisitorInvitation {
         let dayKey = GardenForageItem.dayKey(for: date, calendar: calendar)
         let seed = dayKey.unicodeScalars.reduce(0) { $0 + Int($1.value) }
         let visitors = GardenVisitorKind.allCases
-        let tasks = GardenDailyEventTaskKind.allCases
+        let invitations = GardenVisitorInvitationKind.allCases
         let positions: [(x: Double, y: Double)] = [
-            (0.42, 0.30),
-            (0.63, 0.52),
-            (0.21, 0.55)
+            (0.22, 0.51),
+            (0.78, 0.49),
+            (0.34, 0.48)
         ]
-        let taskKind = tasks[seed % tasks.count]
-        let taskGoal: Int
-        let reward: Int
-        switch taskKind {
+        let invitationKind = invitations[seed % invitations.count]
+        let targetCount: Int
+        let dewAmount: Int
+        switch invitationKind {
         case .gatherDew:
-            taskGoal = 2
-            reward = 3
-        case .tendPlot:
-            taskGoal = 1
-            reward = 2
+            targetCount = 2
+            dewAmount = 3
+        case .touchTrace:
+            targetCount = 1
+            dewAmount = 2
         }
 
         let position = positions[seed % positions.count]
-        return GardenDailyEvent(
+        return GardenVisitorInvitation(
             id: "visitor-\(dayKey)",
             dayKey: dayKey,
             visitor: visitors[seed % visitors.count],
-            taskKind: taskKind,
-            taskGoal: taskGoal,
-            reward: reward,
+            invitationKind: invitationKind,
+            targetCount: targetCount,
+            dewAmount: dewAmount,
             x: position.x,
             y: position.y,
             spawnedAt: date.timeIntervalSince1970
@@ -1696,7 +1835,7 @@ enum GardenKeepsakeKind: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
 
-    static func reward(for visitor: GardenVisitorKind) -> GardenKeepsakeKind {
+    static func keepsake(for visitor: GardenVisitorKind) -> GardenKeepsakeKind {
         switch visitor {
         case .mira: return .pathCharm
         case .sol: return .sunLantern
@@ -1709,21 +1848,54 @@ struct GardenKeepsake: Identifiable, Codable {
     let id: String
     let kind: GardenKeepsakeKind
     let visitor: GardenVisitorKind
-    let unlockedAt: TimeInterval
-    let sourceEventID: String
+    let openedAt: TimeInterval
+    let sourceInvitationID: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case visitor
+        case openedAt
+        case unlockedAt
+        case sourceInvitationID
+        case sourceEventID
+    }
 
     init(
         id: String? = nil,
         kind: GardenKeepsakeKind,
         visitor: GardenVisitorKind,
-        unlockedAt: TimeInterval,
-        sourceEventID: String
+        openedAt: TimeInterval,
+        sourceInvitationID: String
     ) {
         self.id = id ?? "keepsake-\(kind.rawValue)"
         self.kind = kind
         self.visitor = visitor
-        self.unlockedAt = unlockedAt
-        self.sourceEventID = sourceEventID
+        self.openedAt = openedAt
+        self.sourceInvitationID = sourceInvitationID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(String.self, forKey: .id)
+            ?? "keepsake-\(try container.decode(GardenKeepsakeKind.self, forKey: .kind).rawValue)"
+        kind = try container.decode(GardenKeepsakeKind.self, forKey: .kind)
+        visitor = try container.decode(GardenVisitorKind.self, forKey: .visitor)
+        openedAt = try container.decodeIfPresent(TimeInterval.self, forKey: .openedAt)
+            ?? container.decodeIfPresent(TimeInterval.self, forKey: .unlockedAt)
+            ?? 0
+        sourceInvitationID = try container.decodeIfPresent(String.self, forKey: .sourceInvitationID)
+            ?? container.decodeIfPresent(String.self, forKey: .sourceEventID)
+            ?? id
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(visitor, forKey: .visitor)
+        try container.encode(openedAt, forKey: .openedAt)
+        try container.encode(sourceInvitationID, forKey: .sourceInvitationID)
     }
 }
 
@@ -1752,7 +1924,7 @@ enum GardenMapAreaKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    var dailyReward: Int {
+    var visitDewAmount: Int {
         switch self {
         case .pathNook: return 1
         case .lanternGlade: return 2
@@ -1760,7 +1932,7 @@ enum GardenMapAreaKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    static func reward(for keepsake: GardenKeepsakeKind) -> GardenMapAreaKind {
+    static func area(for keepsake: GardenKeepsakeKind) -> GardenMapAreaKind {
         switch keepsake {
         case .pathCharm: return .pathNook
         case .sunLantern: return .lanternGlade
@@ -1772,21 +1944,21 @@ enum GardenMapAreaKind: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .pathNook:
             return [
-                GardenAreaMilestoneDefinition(area: self, stage: 1, requiredVisits: 2, reward: 2),
-                GardenAreaMilestoneDefinition(area: self, stage: 2, requiredVisits: 4, reward: 3),
-                GardenAreaMilestoneDefinition(area: self, stage: 3, requiredVisits: 7, reward: 5)
+                GardenAreaMilestoneDefinition(area: self, stage: 1, requiredVisits: 2, dewAmount: 2),
+                GardenAreaMilestoneDefinition(area: self, stage: 2, requiredVisits: 4, dewAmount: 3),
+                GardenAreaMilestoneDefinition(area: self, stage: 3, requiredVisits: 7, dewAmount: 5)
             ]
         case .lanternGlade:
             return [
-                GardenAreaMilestoneDefinition(area: self, stage: 1, requiredVisits: 2, reward: 3),
-                GardenAreaMilestoneDefinition(area: self, stage: 2, requiredVisits: 5, reward: 4),
-                GardenAreaMilestoneDefinition(area: self, stage: 3, requiredVisits: 8, reward: 6)
+                GardenAreaMilestoneDefinition(area: self, stage: 1, requiredVisits: 2, dewAmount: 3),
+                GardenAreaMilestoneDefinition(area: self, stage: 2, requiredVisits: 5, dewAmount: 4),
+                GardenAreaMilestoneDefinition(area: self, stage: 3, requiredVisits: 8, dewAmount: 6)
             ]
         case .archiveCorner:
             return [
-                GardenAreaMilestoneDefinition(area: self, stage: 1, requiredVisits: 2, reward: 2),
-                GardenAreaMilestoneDefinition(area: self, stage: 2, requiredVisits: 4, reward: 4),
-                GardenAreaMilestoneDefinition(area: self, stage: 3, requiredVisits: 6, reward: 5)
+                GardenAreaMilestoneDefinition(area: self, stage: 1, requiredVisits: 2, dewAmount: 2),
+                GardenAreaMilestoneDefinition(area: self, stage: 2, requiredVisits: 4, dewAmount: 4),
+                GardenAreaMilestoneDefinition(area: self, stage: 3, requiredVisits: 6, dewAmount: 5)
             ]
         }
     }
@@ -1795,22 +1967,22 @@ enum GardenMapAreaKind: String, CaseIterable, Identifiable, Codable {
         milestoneDefinitions.first { $0.stage == stage }
     }
 
-    var questDefinitions: [GardenAreaQuestDefinition] {
+    var chapterDefinitions: [GardenAreaChapterDefinition] {
         milestoneDefinitions.map { milestone in
-            GardenAreaQuestDefinition(
+            GardenAreaChapterDefinition(
                 area: self,
                 stage: milestone.stage,
                 requiredVisits: milestone.requiredVisits,
-                reward: milestone.reward,
-                title: questTitle(stage: milestone.stage),
-                objective: questObjective(stage: milestone.stage, requiredVisits: milestone.requiredVisits),
-                story: questStory(stage: milestone.stage)
+                dewAmount: milestone.dewAmount,
+                title: chapterTitle(stage: milestone.stage),
+                objective: chapterObjective(stage: milestone.stage, requiredVisits: milestone.requiredVisits),
+                story: chapterStory(stage: milestone.stage)
             )
         }
     }
 
-    func questDefinition(stage: Int) -> GardenAreaQuestDefinition? {
-        questDefinitions.first { $0.stage == stage }
+    func chapterDefinition(stage: Int) -> GardenAreaChapterDefinition? {
+        chapterDefinitions.first { $0.stage == stage }
     }
 
     var mapEvolutionDefinitions: [GardenAreaMapEvolutionDefinition] {
@@ -1866,11 +2038,11 @@ enum GardenMapAreaKind: String, CaseIterable, Identifiable, Codable {
         case (.archiveCorner, 3):
             return "The catalog board records the area as restored."
         default:
-            return "The garden remembers this completed chapter."
+            return "The garden remembers this changed chapter."
         }
     }
 
-    private func questTitle(stage: Int) -> String {
+    private func chapterTitle(stage: Int) -> String {
         switch (self, stage) {
         case (.pathNook, 1): return "Mark the first stone"
         case (.pathNook, 2): return "Connect the loop"
@@ -1885,7 +2057,7 @@ enum GardenMapAreaKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    private func questObjective(stage: Int, requiredVisits: Int) -> String {
+    private func chapterObjective(stage: Int, requiredVisits: Int) -> String {
         switch self {
         case .pathNook:
             return "Complete \(requiredVisits) short loop\(requiredVisits == 1 ? "" : "s")"
@@ -1896,7 +2068,7 @@ enum GardenMapAreaKind: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    private func questStory(stage: Int) -> String {
+    private func chapterStory(stage: Int) -> String {
         switch (self, stage) {
         case (.pathNook, 1):
             return "A small marker makes the first step easier to choose."
@@ -1941,24 +2113,24 @@ struct GardenAreaMilestoneDefinition: Identifiable, Equatable {
     let area: GardenMapAreaKind
     let stage: Int
     let requiredVisits: Int
-    let reward: Int
+    let dewAmount: Int
 
     var id: String {
         "area-milestone-definition-\(area.rawValue)-\(stage)"
     }
 }
 
-struct GardenAreaQuestDefinition: Identifiable, Equatable {
+struct GardenAreaChapterDefinition: Identifiable, Equatable {
     let area: GardenMapAreaKind
     let stage: Int
     let requiredVisits: Int
-    let reward: Int
+    let dewAmount: Int
     let title: String
     let objective: String
     let story: String
 
     var id: String {
-        "area-quest-definition-\(area.rawValue)-\(stage)"
+        "area-chapter-definition-\(area.rawValue)-\(stage)"
     }
 }
 
@@ -1993,17 +2165,17 @@ struct GardenAreaLogEntry: Identifiable, Equatable {
     let area: GardenMapAreaKind
     let isUnlocked: Bool
     let visitCount: Int
-    let completedQuests: [GardenAreaQuestDefinition]
-    let nextQuest: GardenAreaQuestDefinition?
+    let completedChapters: [GardenAreaChapterDefinition]
+    let nextChapter: GardenAreaChapterDefinition?
 
     var id: String { area.rawValue }
 
     var completedChapterCount: Int {
-        completedQuests.count
+        completedChapters.count
     }
 
     var totalChapterCount: Int {
-        area.questDefinitions.count
+        area.chapterDefinitions.count
     }
 
     var progressFraction: Double {
@@ -2012,18 +2184,18 @@ struct GardenAreaLogEntry: Identifiable, Equatable {
     }
 
     var completedMemories: [GardenAreaChapterMemory] {
-        completedQuests.compactMap { quest in
-            guard let evolution = area.mapEvolutionDefinition(stage: quest.stage) else {
+        completedChapters.compactMap { chapter in
+            guard let evolution = area.mapEvolutionDefinition(stage: chapter.stage) else {
                 return nil
             }
             return GardenAreaChapterMemory(
                 area: area,
-                stage: quest.stage,
-                title: quest.title,
-                story: quest.story,
-                objective: quest.objective,
-                mapChangeTitle: area.mapEvolutionTitle(stage: quest.stage),
-                mapChangeDetail: area.mapEvolutionDetail(stage: quest.stage),
+                stage: chapter.stage,
+                title: chapter.title,
+                story: chapter.story,
+                objective: chapter.objective,
+                mapChangeTitle: area.mapEvolutionTitle(stage: chapter.stage),
+                mapChangeDetail: area.mapEvolutionDetail(stage: chapter.stage),
                 evolution: evolution
             )
         }
@@ -2041,15 +2213,15 @@ struct GardenAreaLogEntry: Identifiable, Equatable {
 
         return GardenMapAreaKind.allCases.map { area in
             let completedStages = milestoneStagesByArea[area] ?? []
-            let completedQuests = area.questDefinitions.filter { completedStages.contains($0.stage) }
-            let nextQuest = area.questDefinitions.first { !completedStages.contains($0.stage) }
+            let completedChapters = area.chapterDefinitions.filter { completedStages.contains($0.stage) }
+            let nextChapter = area.chapterDefinitions.first { !completedStages.contains($0.stage) }
 
             return GardenAreaLogEntry(
                 area: area,
                 isUnlocked: unlockedAreaKinds.contains(area),
                 visitCount: visitsByArea[area]?.count ?? 0,
-                completedQuests: completedQuests,
-                nextQuest: unlockedAreaKinds.contains(area) ? nextQuest : nil
+                completedChapters: completedChapters,
+                nextChapter: unlockedAreaKinds.contains(area) ? nextChapter : nil
             )
         }
     }
@@ -2078,21 +2250,50 @@ struct GardenMapAreaVisit: Identifiable, Codable {
     let id: String
     let area: GardenMapAreaKind
     let dayKey: String
-    let reward: Int
+    let dewAmount: Int
     let completedAt: TimeInterval
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case area
+        case dayKey
+        case dewAmount
+        case reward
+        case completedAt
+    }
 
     init(
         id: String? = nil,
         area: GardenMapAreaKind,
         dayKey: String,
-        reward: Int,
+        dewAmount: Int,
         completedAt: TimeInterval
     ) {
         self.id = id ?? "area-visit-\(area.rawValue)-\(dayKey)"
         self.area = area
         self.dayKey = dayKey
-        self.reward = reward
+        self.dewAmount = dewAmount
         self.completedAt = completedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        area = try container.decode(GardenMapAreaKind.self, forKey: .area)
+        dayKey = try container.decode(String.self, forKey: .dayKey)
+        dewAmount = try container.decodeIfPresent(Int.self, forKey: .dewAmount)
+            ?? container.decodeIfPresent(Int.self, forKey: .reward)
+            ?? 0
+        completedAt = try container.decode(TimeInterval.self, forKey: .completedAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(area, forKey: .area)
+        try container.encode(dayKey, forKey: .dayKey)
+        try container.encode(dewAmount, forKey: .dewAmount)
+        try container.encode(completedAt, forKey: .completedAt)
     }
 }
 
@@ -2101,23 +2302,55 @@ struct GardenAreaMilestoneUnlock: Identifiable, Codable {
     let area: GardenMapAreaKind
     let stage: Int
     let requiredVisits: Int
-    let reward: Int
+    let dewAmount: Int
     let unlockedAt: TimeInterval
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case area
+        case stage
+        case requiredVisits
+        case dewAmount
+        case reward
+        case unlockedAt
+    }
 
     init(
         id: String? = nil,
         area: GardenMapAreaKind,
         stage: Int,
         requiredVisits: Int,
-        reward: Int,
+        dewAmount: Int,
         unlockedAt: TimeInterval
     ) {
         self.id = id ?? "area-milestone-\(area.rawValue)-\(stage)"
         self.area = area
         self.stage = stage
         self.requiredVisits = requiredVisits
-        self.reward = reward
+        self.dewAmount = dewAmount
         self.unlockedAt = unlockedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        area = try container.decode(GardenMapAreaKind.self, forKey: .area)
+        stage = try container.decode(Int.self, forKey: .stage)
+        requiredVisits = try container.decode(Int.self, forKey: .requiredVisits)
+        dewAmount = try container.decodeIfPresent(Int.self, forKey: .dewAmount)
+            ?? container.decodeIfPresent(Int.self, forKey: .reward)
+            ?? 0
+        unlockedAt = try container.decode(TimeInterval.self, forKey: .unlockedAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(area, forKey: .area)
+        try container.encode(stage, forKey: .stage)
+        try container.encode(requiredVisits, forKey: .requiredVisits)
+        try container.encode(dewAmount, forKey: .dewAmount)
+        try container.encode(unlockedAt, forKey: .unlockedAt)
     }
 }
 
@@ -2125,8 +2358,8 @@ struct GardenAreaActionResult {
     let visit: GardenMapAreaVisit
     let unlockedMilestones: [GardenAreaMilestoneUnlock]
 
-    var totalReward: Int {
-        visit.reward + unlockedMilestones.reduce(0) { $0 + $1.reward }
+    var totalDewAmount: Int {
+        visit.dewAmount + unlockedMilestones.reduce(0) { $0 + $1.dewAmount }
     }
 }
 

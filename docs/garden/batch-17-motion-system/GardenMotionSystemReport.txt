@@ -1,0 +1,12 @@
+Mira idle: 14 frames, 0.140s/frame, cycle 1.96s, centerX drift 3.59px, centerY drift 2.28px
+Mira walk: 14 frames, 0.095s/frame, cycle 1.33s, centerX drift 4.00px, centerY drift 4.31px
+Mira offer: 16 frames, 0.105s/frame, cycle 1.68s, centerX drift 15.04px, centerY drift 13.36px
+Sol idle: 8 frames, 0.200s/frame, cycle 1.60s, centerX drift 1.16px, centerY drift 1.23px
+Sol walk: 14 frames, 0.095s/frame, cycle 1.33s, centerX drift 2.61px, centerY drift 4.74px
+Sol offer: 16 frames, 0.105s/frame, cycle 1.68s, centerX drift 34.96px, centerY drift 40.02px
+Nori idle: 16 frames, 0.140s/frame, cycle 2.24s, centerX drift 15.84px, centerY drift 4.80px
+Nori walk: 22 frames, 0.095s/frame, cycle 2.09s, centerX drift 3.40px, centerY drift 5.57px
+Nori offer: 16 frames, 0.105s/frame, cycle 1.68s, centerX drift 11.00px, centerY drift 13.16px
+Keeper walk: 16 frames, 0.075s/frame, cycle 1.20s, centerX drift 5.19px, centerY drift 10.08px
+Keeper inspect: 16 frames, 0.090s/frame, cycle 1.44s, centerX drift 38.19px, centerY drift 27.81px
+Keeper place: 16 frames, 0.090s/frame, cycle 1.44s, centerX drift 38.60px, centerY drift 35.12px
