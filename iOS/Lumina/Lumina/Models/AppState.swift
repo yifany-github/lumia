@@ -257,6 +257,7 @@ enum SubscriptionStatus: String, Codable, CaseIterable, Identifiable, Equatable 
 enum SubscriptionProvider: String, Codable, CaseIterable, Identifiable, Equatable {
     case none
     case revenuecat
+    case storekit
     case manual
 
     var id: String { rawValue }
@@ -2730,6 +2731,12 @@ final class AccountStore: ObservableObject {
         currentAccount = nil
     }
 
+    func clear() {
+        currentAccount = nil
+        accounts.removeAll()
+        credentials.removeAll()
+    }
+
     private func makeAccount(
         provider: LuminaAccountProvider,
         displayName: String,
@@ -4412,6 +4419,54 @@ final class AppState: ObservableObject {
         try? firebaseBackend.signOut()
         accountStore.signOut()
         subscriptionStore.update(SubscriptionState())
+    }
+
+    func deleteCurrentAccount() async throws {
+        if firebaseBackend.currentUser != nil {
+            try await firebaseBackend.deleteCurrentUserAccount()
+        }
+        resetLocalStateAfterAccountDeletion()
+    }
+
+    private func resetLocalStateAfterAccountDeletion() {
+        cloudRestoreTask?.cancel()
+        cloudSessionSyncTasks.values.forEach { $0.cancel() }
+        cloudSessionDeletionSyncTasks.values.forEach { $0.cancel() }
+        cloudSessionDeletionBulkSyncTask?.cancel()
+        cloudJournalSummarySyncTasks.values.forEach { $0.cancel() }
+        cloudJournalDeletionSyncTasks.values.forEach { $0.cancel() }
+        cloudJournalDeletionBulkSyncTask?.cancel()
+        cloudJournalBulkSyncTask?.cancel()
+        cloudProfileSyncTask?.cancel()
+        cloudSubscriptionSyncTask?.cancel()
+        cloudJournalInsightSyncTask?.cancel()
+        cloudGardenSyncTask?.cancel()
+
+        cloudSessionSyncTasks.removeAll()
+        cloudSessionDeletionSyncTasks.removeAll()
+        cloudJournalSummarySyncTasks.removeAll()
+        cloudJournalDeletionSyncTasks.removeAll()
+
+        try? firebaseBackend.signOut()
+        chatStore.restore([:], deletionTombstones: [])
+        journalStore.restore([], deletionTombstones: [])
+        journalInsightStore.restore(PersistedJournalInsightState())
+        gardenStore.restore(PersistedGardenState())
+        followUpStore.restore([])
+        healthDataStore.restore(PersistedHealthDataState())
+        jitaiStore.restore(PersistedJITAIState())
+        notificationStore.restore(PersistedNotificationState())
+        evaluationStore.restore(PersistedEvaluationState())
+        profileStore.restore(PersistedProfileState())
+        accountStore.clear()
+        subscriptionStore.restore(PersistedSubscriptionState())
+        selectedTab = 0
+        pendingTherapyTherapistID = nil
+        pendingTherapySessionID = nil
+        UserDefaults.standard.set(false, forKey: WelcomeGuideStorage.completionKey)
+        UserDefaults.standard.set(false, forKey: "lumina.garden.hasCompletedFirstVisitGuide.v1")
+        savePersistedState()
+        objectWillChange.send()
     }
 
     private func startFirebaseAuthListener() {

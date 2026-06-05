@@ -107,6 +107,25 @@ final class FirebaseBackendService: ObservableObject {
         currentUser = nil
     }
 
+    func deleteCurrentUserAccount() async throws {
+        guard let user = Auth.auth().currentUser else { return }
+        let userDocument = db.collection("users").document(user.uid)
+
+        try await deleteKnownUserCollections(in: userDocument)
+        try await userDocument.delete()
+
+        do {
+            try await user.delete()
+            currentUser = nil
+        } catch {
+            let nsError = error as NSError
+            if nsError.code == AuthErrorCode.requiresRecentLogin.rawValue {
+                throw LuminaAuthError.providerUnavailable("For your security, sign out and sign in again, then delete your account.")
+            }
+            throw error
+        }
+    }
+
     func syncUserProfile(user: User, displayName: String?) async throws {
         let name = displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
         let providerIDs = user.providerData.map(\.providerID)
@@ -526,6 +545,42 @@ final class FirebaseBackendService: ObservableObject {
             .collection("devices")
             .document(Self.deviceDocumentID)
             .setData(payload, merge: true)
+    }
+
+    private func deleteKnownUserCollections(in userDocument: DocumentReference) async throws {
+        let collectionNames = [
+            "profile",
+            "journalSummaries",
+            "journalDeletes",
+            "journalInsights",
+            "garden",
+            "therapySessions",
+            "therapySessionDeletes",
+            "therapyContexts",
+            "entitlements",
+            "devices"
+        ]
+
+        for collectionName in collectionNames {
+            try await deleteDocuments(in: userDocument.collection(collectionName))
+        }
+    }
+
+    private func deleteDocuments(in collection: CollectionReference, pageSize: Int = 100) async throws {
+        while true {
+            let snapshot = try await collection.limit(to: pageSize).getDocuments()
+            guard !snapshot.documents.isEmpty else { return }
+
+            let batch = db.batch()
+            snapshot.documents.forEach { document in
+                batch.deleteDocument(document.reference)
+            }
+            try await batch.commit()
+
+            if snapshot.documents.count < pageSize {
+                return
+            }
+        }
     }
 
     private static func firestoreDictionary<T: Encodable>(from value: T) throws -> [String: Any] {

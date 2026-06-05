@@ -4,6 +4,11 @@ import AuthenticationServices
 import CryptoKit
 import Security
 
+private enum LumiaLegalLinks {
+    static let privacyPolicy = URL(string: "https://lumia-cd3d2.web.app/privacy.html")!
+    static let termsOfUse = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
+}
+
 private enum ProfileAuthMode: String, CaseIterable, Identifiable {
     case signIn
     case register
@@ -133,6 +138,8 @@ struct ProfileView: View {
     @State private var showAccountSheet = false
     @State private var showSignOutConfirm = false
     @State private var showMembershipSheet = false
+    @State private var showAIDataDisclosure = false
+    @State private var showDeleteAccountConfirm = false
     @State private var biometricUnavailableMessage = "Device authentication is not available."
     @State private var editedName  = ""
     @State private var editedBio   = ""
@@ -153,6 +160,8 @@ struct ProfileView: View {
     @State private var currentAppleNonce: String?
     @State private var selectedMembershipPlan = "yearly"
     @State private var membershipActionError: String?
+    @State private var accountDeletionErrorMessage: String?
+    @State private var isDeletingAccount = false
     @State private var appeared    = false
 
     var totalSessions: Int   { appState.chatSessions.count }
@@ -299,6 +308,7 @@ struct ProfileView: View {
         .sheet(isPresented: $showGoalSheet) { goalsSheet }
         .sheet(isPresented: $showAccountSheet) { accountSheet }
         .sheet(isPresented: $showMembershipSheet) { membershipSheet }
+        .sheet(isPresented: $showAIDataDisclosure) { aiDataDisclosureSheet }
         .sheet(isPresented: $showShareSheet) { ShareSheet(items: [exportText]) }
         .alert("Reset All Data?", isPresented: $showClearConfirm) {
             Button("Delete Everything", role: .destructive) {
@@ -334,6 +344,14 @@ struct ProfileView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Lumia will keep local journals, chats, and garden progress on this device.")
+        }
+        .alert("Delete Account?", isPresented: $showDeleteAccountConfirm) {
+            Button("Delete Account", role: .destructive) {
+                deleteCurrentAccount()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently deletes your Lumia account and cloud data, then clears local journals, chats, garden progress, and settings from this device. This cannot be undone.")
         }
     }
 
@@ -583,6 +601,9 @@ struct ProfileView: View {
                 aiConnectionStatusMessage = nil
                 showAIConnection = true
             },
+            onAIDataDisclosure: {
+                showAIDataDisclosure = true
+            },
             onQuickGuide: {
                 dismissProfile()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
@@ -798,6 +819,38 @@ struct ProfileView: View {
         appState.requireBiometrics = true
     }
 
+    func deleteCurrentAccount() {
+        guard !isDeletingAccount else { return }
+        accountDeletionErrorMessage = nil
+        isDeletingAccount = true
+        Task { @MainActor in
+            do {
+                try await appState.deleteCurrentAccount()
+                isDeletingAccount = false
+                showAccountSheet = false
+                dismissProfile()
+            } catch {
+                isDeletingAccount = false
+                accountDeletionErrorMessage = userFacingAccountDeletionError(error)
+                showAccountSheet = true
+            }
+        }
+    }
+
+    func userFacingAccountDeletionError(_ error: Error) -> String {
+        let message = error.localizedDescription
+        if message.localizedCaseInsensitiveContains("recent") ||
+            message.localizedCaseInsensitiveContains("credential") ||
+            message.localizedCaseInsensitiveContains("sign in again") {
+            return "For security, sign out and sign in again, then delete your account."
+        }
+        if message.localizedCaseInsensitiveContains("network") ||
+            message.localizedCaseInsensitiveContains("offline") {
+            return "Account deletion needs a connection. Check your network and try again."
+        }
+        return message
+    }
+
     func settingsRow(icon: String, bg: Color, title: String, detail: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 14) {
@@ -899,6 +952,7 @@ struct ProfileView: View {
         let onEditBio: () -> Void
         let onEditIdentity: () -> Void
         let onAIConnection: () -> Void
+        let onAIDataDisclosure: () -> Void
         let onQuickGuide: () -> Void
         let onRefreshNotifications: () -> Void
         let onOpenSystemSettings: () -> Void
@@ -1058,6 +1112,13 @@ struct ProfileView: View {
                         title: "Health Context",
                         detail: "Coming soon - not enabled in v1.",
                         badge: "SOON"
+                    )
+                    settingsRow(
+                        icon: "sparkles.rectangle.stack.fill",
+                        bg: Color(hex: 0x9A6A22),
+                        title: "AI Data & Providers",
+                        detail: "Google Gemini via Firebase AI Logic",
+                        action: onAIDataDisclosure
                     )
                     settingsRow(
                         icon: "square.and.arrow.up.fill",
@@ -1962,6 +2023,33 @@ struct ProfileView: View {
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
 
+                    VStack(spacing: 8) {
+                        Text("Subscriptions renew automatically unless cancelled at least 24 hours before the end of the current period. Payment is charged to your Apple Account, and you can manage or cancel in App Store account settings.")
+                            .luminaFont(size: 11, weight: .medium)
+                            .foregroundColor(.organicMutedFg)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        HStack(spacing: 12) {
+                            Button("Privacy Policy") {
+                                openURL(LumiaLegalLinks.privacyPolicy)
+                            }
+                            .luminaFont(size: 12, weight: .bold)
+                            .foregroundColor(.organicPrimary)
+
+                            Text("·")
+                                .luminaFont(size: 12, weight: .bold)
+                                .foregroundColor(.organicMutedFg)
+
+                            Button("Terms of Use") {
+                                openURL(LumiaLegalLinks.termsOfUse)
+                            }
+                            .luminaFont(size: 12, weight: .bold)
+                            .foregroundColor(.organicPrimary)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+
                     Text("Monthly users can choose Yearly here. Apple handles the upgrade inside the same subscription group and applies the remaining value automatically when eligible.")
                         .luminaFont(size: 11, weight: .medium)
                         .foregroundColor(.organicMutedFg)
@@ -2453,6 +2541,14 @@ struct ProfileView: View {
                 .foregroundColor(.organicMutedFg)
                 .lineSpacing(3)
 
+            if let accountDeletionErrorMessage {
+                Text(accountDeletionErrorMessage)
+                    .luminaFont(size: 12, weight: .semibold)
+                    .foregroundColor(Color(hex: 0xBE185D))
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Button(role: .destructive) {
                 showAccountSheet = false
                 showSignOutConfirm = true
@@ -2466,6 +2562,33 @@ struct ProfileView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.plain)
+
+            Button(role: .destructive) {
+                accountDeletionErrorMessage = nil
+                showAccountSheet = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) {
+                    showDeleteAccountConfirm = true
+                }
+            } label: {
+                HStack(spacing: 9) {
+                    if isDeletingAccount {
+                        ProgressView()
+                            .tint(Color(hex: 0xBE185D))
+                    } else {
+                        Image(systemName: "trash.fill")
+                            .luminaFont(size: 14, weight: .bold)
+                    }
+                    Text(isDeletingAccount ? "Deleting Account..." : "Delete Account")
+                }
+                .luminaFont(size: 15, weight: .bold)
+                .foregroundColor(Color(hex: 0xBE185D))
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .background(Color(hex: 0xBE185D).opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(isDeletingAccount)
         }
     }
 
@@ -2836,6 +2959,84 @@ struct ProfileView: View {
             }
         }
         .presentationDetents([.height(appState.useLargeText ? 430 : 360)])
+    }
+
+    var aiDataDisclosureSheet: some View {
+        ProfileSheetChrome(
+            title: "AI Data & Providers",
+            saveTitle: "Done",
+            canSave: true,
+            onCancel: { showAIDataDisclosure = false },
+            onSave: { showAIDataDisclosure = false }
+        ) {
+            disclosureCard(
+                icon: "cross.case.fill",
+                tint: Color(hex: 0xBE185D),
+                title: "Not psychotherapy",
+                body: "Lumia offers self-help reflection and emotional support. It does not provide psychotherapy, diagnosis, medical treatment, crisis intervention, or emergency care."
+            )
+
+            disclosureCard(
+                icon: "sparkles",
+                tint: Color(hex: 0x9A6A22),
+                title: "AI provider",
+                body: "Lumia uses Google Gemini through Firebase AI Logic and Lumia cloud services to power AI guide conversations, summaries, and related self-care suggestions."
+            )
+
+            disclosureCard(
+                icon: "tray.and.arrow.up.fill",
+                tint: Color(hex: 0x5D7052),
+                title: "Information sent",
+                body: "When you use AI features, Lumia may send your active chat message, recent conversation history, optional summarized journal context, self-reported check-ins, voice transcripts, audio for live voice features, or camera frames only when you explicitly enable camera sharing."
+            )
+
+            disclosureCard(
+                icon: "slider.horizontal.3",
+                tint: Color(hex: 0x0F766E),
+                title: "Your controls",
+                body: "You can turn off journal context for therapy, skip optional voice or camera features, export local data, clear local content, and delete your account from Profile."
+            )
+
+            Button("Open Privacy Policy") {
+                openURL(LumiaLegalLinks.privacyPolicy)
+            }
+            .luminaFont(size: 14, weight: .bold)
+            .foregroundColor(.organicPrimary)
+            .frame(maxWidth: .infinity)
+            .frame(height: 48)
+            .background(Color.organicPrimary.opacity(0.10))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .buttonStyle(.plain)
+        }
+        .presentationDetents([.large])
+    }
+
+    func disclosureCard(icon: String, tint: Color, title: String, body: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(tint.opacity(0.14))
+                    .frame(width: 46, height: 46)
+                Image(systemName: icon)
+                    .luminaFont(size: 17, weight: .black)
+                    .foregroundStyle(tint)
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title)
+                    .luminaFont(size: 14, weight: .bold)
+                    .foregroundColor(.organicForeground)
+                Text(body)
+                    .luminaFont(size: 12, weight: .medium)
+                    .foregroundColor(.organicMutedFg)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.organicMuted.opacity(0.82))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private func testAIConnection() {
