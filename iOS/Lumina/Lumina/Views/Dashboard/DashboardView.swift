@@ -162,7 +162,6 @@ struct DashboardView: View {
         .sheet(item: $journalEditorRoute) { route in
             JournalEditorView(editingEntry: route.editingEntry)
                 .id(route.id)
-                .luminaFoldSafeSheet()
         }
         .sheet(isPresented: $showingProfile) {
             // Lays itself out either side of the fold when unfolded.
@@ -2182,7 +2181,6 @@ struct JournalRootView: View {
         .sheet(item: $journalEditorRoute) { route in
             JournalEditorView(editingEntry: route.editingEntry)
                 .id(route.id)
-                .luminaFoldSafeSheet()
         }
     }
 }
@@ -2333,6 +2331,7 @@ struct LuminaFoldGeometryReader<Content: View>: View {
 /// (iPhone Duo) — in two columns that sit on either side of the fold. The
 /// closures learn whether the columns are split so they can move content.
 struct LuminaFoldColumns<Leading: View, Trailing: View>: View {
+    var alignment: HorizontalAlignment = .center
     var spacing: CGFloat = 16
     @ViewBuilder var leading: (_ isSplit: Bool) -> Leading
     @ViewBuilder var trailing: (_ isSplit: Bool) -> Trailing
@@ -2350,7 +2349,7 @@ struct LuminaFoldColumns<Leading: View, Trailing: View>: View {
                 ? AnyLayout(HStackLayout(alignment: .top, spacing: 0))
                 : AnyLayout(VStackLayout(spacing: 0))
             layout {
-                VStack(spacing: spacing) { leading(isSplit) }
+                VStack(alignment: alignment, spacing: spacing) { leading(isSplit) }
                     .frame(width: crease.map { max(0, $0.minX - Self.foldGap) })
                     .frame(maxWidth: isSplit ? nil : .infinity)
                 // Unfolded: the fold and a margin either side. Folded: the gap
@@ -2358,7 +2357,7 @@ struct LuminaFoldColumns<Leading: View, Trailing: View>: View {
                 Color.clear
                     .frame(width: crease.map { $0.width + Self.foldGap * 2 }, height: isSplit ? 0 : spacing)
                     .accessibilityHidden(true)
-                VStack(spacing: spacing) { trailing(isSplit) }
+                VStack(alignment: alignment, spacing: spacing) { trailing(isSplit) }
                     .frame(maxWidth: .infinity)
             }
         }

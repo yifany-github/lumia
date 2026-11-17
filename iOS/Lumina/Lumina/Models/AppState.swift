@@ -3,6 +3,8 @@ import Combine
 import CryptoKit
 import Network
 import UserNotifications
+import AuthenticationServices
+import Security
 import FirebaseAuth
 import FirebaseCore
 
@@ -480,6 +482,146 @@ enum LuminaAuthError: LocalizedError {
         case .providerUnavailable(let message):
             return message
         }
+    }
+}
+
+enum LuminaAuthErrorContext {
+    case signIn
+    case registration
+}
+
+func luminaLogAuthenticationError(_ error: Error, context: String) {
+    let nsError = error as NSError
+    print("Lumia auth error [\(context)]: domain=\(nsError.domain) code=\(nsError.code) message=\(nsError.localizedDescription)")
+}
+
+func luminaUserFacingAuthError(_ error: Error, context: LuminaAuthErrorContext) -> String {
+    if let authError = error as? LuminaAuthError {
+        return authError.localizedDescription
+    }
+
+    let nsError = error as NSError
+    if nsError.domain == AuthErrorDomain {
+        switch nsError.code {
+        case AuthErrorCode.invalidEmail.rawValue, AuthErrorCode.missingEmail.rawValue:
+            return "Check the email address and try again."
+        case AuthErrorCode.weakPassword.rawValue:
+            return "Use at least 8 characters for the password."
+        case AuthErrorCode.emailAlreadyInUse.rawValue:
+            return "An account already exists for this email. Switch to Sign In."
+        case AuthErrorCode.userNotFound.rawValue:
+            return "No account was found for this email. Switch to Create Account."
+        case AuthErrorCode.wrongPassword.rawValue, AuthErrorCode.invalidCredential.rawValue:
+            return "The email or password is incorrect."
+        case AuthErrorCode.networkError.rawValue, AuthErrorCode.webNetworkRequestFailed.rawValue:
+            return "The connection was interrupted. Check your network and try again."
+        case AuthErrorCode.tooManyRequests.rawValue, AuthErrorCode.quotaExceeded.rawValue:
+            return "Too many attempts. Wait a moment, then try again."
+        case AuthErrorCode.operationNotAllowed.rawValue:
+            return "This sign-in method is not enabled for Lumia. Try another method."
+        case AuthErrorCode.accountExistsWithDifferentCredential.rawValue:
+            return "This email is already linked to another sign-in method."
+        case AuthErrorCode.credentialAlreadyInUse.rawValue:
+            return "This Apple or Google account is already linked to another Lumia profile."
+        case AuthErrorCode.userDisabled.rawValue:
+            return "This account has been disabled."
+        case AuthErrorCode.invalidUserToken.rawValue, AuthErrorCode.userTokenExpired.rawValue:
+            return "Your sign-in session expired. Try again."
+        case AuthErrorCode.missingOrInvalidNonce.rawValue:
+            return "Apple sign-in could not be verified. Try again."
+        default:
+            break
+        }
+    }
+
+    let message = error.localizedDescription
+    if message.localizedCaseInsensitiveContains("network") ||
+        message.localizedCaseInsensitiveContains("timed out") ||
+        message.localizedCaseInsensitiveContains("offline") {
+        return "The connection was interrupted. Check your network and try again."
+    }
+    if message.localizedCaseInsensitiveContains("password") {
+        return "The email or password is incorrect."
+    }
+    if message.localizedCaseInsensitiveContains("email") {
+        return "Check the email address and try again."
+    }
+    if message.localizedCaseInsensitiveContains("cancel") {
+        return "Sign in was cancelled."
+    }
+    return context == .registration
+        ? "Account creation could not be completed. Please try again."
+        : "Sign in could not be completed. Please try again."
+}
+
+@MainActor
+enum LuminaAppleSignInCoordinator {
+    private struct PendingNonce {
+        let id: String
+        let value: String
+        let createdAt: Date
+    }
+
+    private static let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+    private static var pendingNonces: [PendingNonce] = []
+
+    static func prepare(_ request: ASAuthorizationAppleIDRequest) throws {
+        pruneExpiredNonces()
+        let nonce = try randomNonce()
+        let id = UUID().uuidString
+        pendingNonces.append(PendingNonce(id: id, value: nonce, createdAt: Date()))
+        if pendingNonces.count > 4 {
+            pendingNonces.removeFirst(pendingNonces.count - 4)
+        }
+        request.requestedScopes = [.fullName, .email]
+        request.nonce = sha256(nonce)
+        request.state = id
+    }
+
+    static func consumeNonce(from credential: ASAuthorizationAppleIDCredential) -> String? {
+        pruneExpiredNonces()
+        if let state = credential.state,
+           let index = pendingNonces.lastIndex(where: { $0.id == state }) {
+            return pendingNonces.remove(at: index).value
+        }
+        return pendingNonces.popLast()?.value
+    }
+
+    static func cancelPendingNonces() {
+        pendingNonces.removeAll()
+    }
+
+    private static func pruneExpiredNonces() {
+        let cutoff = Date().addingTimeInterval(-600)
+        pendingNonces.removeAll { $0.createdAt < cutoff }
+    }
+
+    private static func randomNonce(length: Int = 32) throws -> String {
+        precondition(length > 0)
+        var result = ""
+        result.reserveCapacity(length)
+
+        while result.count < length {
+            var randomByte: UInt8 = 0
+            let status = SecRandomCopyBytes(kSecRandomDefault, 1, &randomByte)
+            guard status == errSecSuccess else {
+                throw NSError(
+                    domain: "LuminaAppleSignIn",
+                    code: Int(status),
+                    userInfo: [NSLocalizedDescriptionKey: "Apple sign-in could not start securely. Try again."]
+                )
+            }
+            if randomByte < charset.count {
+                result.append(charset[Int(randomByte)])
+            }
+        }
+
+        return result
+    }
+
+    private static func sha256(_ input: String) -> String {
+        let digest = SHA256.hash(data: Data(input.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -3506,6 +3648,125 @@ final class AppState: ObservableObject {
         refreshJITAI()
         return habit
     }
+
+#if DEBUG
+    func seedGardenDebugDemoIfNeeded() {
+        let marker = "debug-garden-demo"
+        journalStore.entries.removeAll { $0.id.contains(marker) }
+        gardenStore.habits.removeAll { $0.id.contains(marker) }
+        gardenStore.therapyMicroPlans.removeAll { $0.id.contains(marker) }
+        gardenStore.forageItems.removeAll { $0.id.contains(marker) }
+        gardenStore.gardenDecorations.removeAll { $0.id.contains(marker) }
+        gardenStore.keepsakes.removeAll { $0.id.contains(marker) }
+        gardenStore.unlockedAreas.removeAll { $0.sourceKeepsakeID.contains(marker) }
+        gardenStore.areaMilestones.removeAll { $0.id.contains(marker) }
+
+        let now = Date()
+        let timestamp = now.timeIntervalSince1970
+        let dayText = now.formatted(.dateTime.month(.abbreviated).day())
+        let journalFixtures: [(id: String, title: String, content: String, mood: MoodType, growth: Int)] = [
+            (
+                "\(marker)-calm",
+                "After the meeting",
+                "I felt steadier after naming what was mine to carry and what was not.",
+                .calm,
+                72
+            ),
+            (
+                "\(marker)-anxious",
+                "Storm before lunch",
+                "My chest was tight and the task felt larger than it was. I paused before replying.",
+                .anxious,
+                58
+            ),
+            (
+                "\(marker)-sad",
+                "Quiet evening",
+                "A low mood stayed around. I made space for it without turning it into a verdict.",
+                .sad,
+                64
+            )
+        ]
+
+        for (index, fixture) in journalFixtures.enumerated() {
+            let entry = JournalEntry(
+                id: fixture.id,
+                date: dayText,
+                timestamp: timestamp - Double(index * 420),
+                title: fixture.title,
+                content: fixture.content,
+                mood: fixture.mood,
+                tags: ["Garden Demo"],
+                reflection: nil,
+                actionItem: nil,
+                summary: nil,
+                sentimentScore: nil,
+                energyLevel: nil,
+                anxietyLevel: fixture.mood == .anxious ? 7 : nil,
+                therapyMemoryPolicy: .included
+            )
+            journalStore.addEntry(entry)
+            if let habit = gardenStore.upsertJournalMemoryPlant(for: entry),
+               let habitIndex = gardenStore.habits.firstIndex(where: { $0.id == habit.id }) {
+                gardenStore.habits[habitIndex].growth = fixture.growth
+                gardenStore.habits[habitIndex].plantType = fixture.growth >= 60 ? .flower : .sprout
+            }
+        }
+
+        let microPlan = MicroPlan(
+            id: "\(marker)-micro-plan",
+            trigger: "the next message feels urgent",
+            action: "One breath reply",
+            support: "This trace is only a practice marker, not a demand.",
+            sourceSessionID: marker,
+            createdAt: timestamp - 1_000
+        )
+        if let therapyHabit = gardenStore.addTherapyMicroPlan(microPlan),
+           let index = gardenStore.habits.firstIndex(where: { $0.id == therapyHabit.id }) {
+            gardenStore.habits[index].growth = 68
+            gardenStore.habits[index].plantType = .flower
+        }
+
+        let anchorHabitID = gardenStore.habits.first?.id ?? "\(marker)-anchor"
+        gardenStore.waterDrops = max(gardenStore.waterDrops, 8)
+        gardenStore.gardenDecorations.append(contentsOf: [
+            GardenDecoration(id: "\(marker)-lamp", type: .lamp, anchorHabitID: anchorHabitID, x: 0.78, y: 0.58),
+            GardenDecoration(id: "\(marker)-stone", type: .stones, anchorHabitID: anchorHabitID, x: 0.28, y: 0.63),
+            GardenDecoration(id: "\(marker)-flower", type: .flowers, anchorHabitID: anchorHabitID, x: 0.62, y: 0.69)
+        ])
+
+        gardenStore.forageItems = [
+            GardenForageItem(id: "\(marker)-dew-1", dayKey: marker, x: 0.20, y: 0.57, dewAmount: 1, spawnedAt: timestamp),
+            GardenForageItem(id: "\(marker)-dew-2", dayKey: marker, x: 0.47, y: 0.66, dewAmount: 1, spawnedAt: timestamp),
+            GardenForageItem(id: "\(marker)-dew-3", dayKey: marker, x: 0.72, y: 0.52, dewAmount: 1, spawnedAt: timestamp)
+        ]
+
+        let keepsake = GardenKeepsake(
+            id: "\(marker)-sun-lantern",
+            kind: .sunLantern,
+            visitor: .sol,
+            openedAt: timestamp,
+            sourceInvitationID: "\(marker)-visitor"
+        )
+        gardenStore.keepsakes.append(keepsake)
+        gardenStore.unlockedAreas.append(
+            GardenMapAreaUnlock(area: .lanternGlade, unlockedAt: timestamp, sourceKeepsakeID: keepsake.id)
+        )
+        gardenStore.areaMilestones.append(
+            GardenAreaMilestoneUnlock(
+                id: "\(marker)-lantern-stage-1",
+                area: .lanternGlade,
+                stage: 1,
+                requiredVisits: 2,
+                dewAmount: 3,
+                unlockedAt: timestamp
+            )
+        )
+        objectWillChange.send()
+    }
+#else
+    func seedGardenDebugDemoIfNeeded() {}
+#endif
 
     // MARK: - Follow-ups
 

@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import FirebaseAILogic
 import CoreImage
 import NaturalLanguage
@@ -302,7 +302,7 @@ final class SpeechInputController: ObservableObject {
     }
 
     private static func languageCode(from identifier: String) -> String {
-        Locale(identifier: identifier.replacingOccurrences(of: "-", with: "_")).languageCode
+        Locale(identifier: identifier.replacingOccurrences(of: "-", with: "_")).language.languageCode?.identifier
             ?? identifier.split(separator: "-").first.map(String.init)
             ?? identifier
     }
@@ -330,10 +330,7 @@ struct AudioPipelineError: Error, Sendable, CustomNSError {
 
 extension AVAudioSession.CategoryOptions {
     static var luminaAllowBluetoothHFP: AVAudioSession.CategoryOptions {
-        if #available(iOS 26.0, *) {
-            return .allowBluetoothHFP
-        }
-        return .allowBluetooth
+        .allowBluetoothHFP
     }
 }
 
@@ -653,6 +650,7 @@ actor LiveAudioController {
 
 struct FullChatView: View {
     @EnvironmentObject var appState: AppState
+    @AppStorage(GeminiService.aiDataSharingConsentKey) private var hasAIDataSharingConsent = false
     @StateObject private var speechInput = SpeechInputController()
     @State private var activeTherapist: Therapist?
     @State private var messages: [ChatMessage] = []
@@ -669,6 +667,21 @@ struct FullChatView: View {
     @State private var activeUsesJournalContext = false
     @State private var activeUsesGuideMemory = false
     @State private var speechInputRequestID = 0
+    @State private var pendingAIConsentAction: TherapyAIConsentAction?
+
+    private enum TherapyAIConsentAction: Identifiable {
+        case sendMessage(String)
+        case startCall(TherapyCallKind)
+
+        var id: String {
+            switch self {
+            case .sendMessage(let text):
+                return "send-\(text.hashValue)"
+            case .startCall(let kind):
+                return "call-\(kind.rawValue)"
+            }
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -784,6 +797,11 @@ struct FullChatView: View {
         .onChange(of: appState.isNetworkAvailable) { isAvailable in
             handleNetworkChange(isAvailable)
         }
+        .sheet(item: $pendingAIConsentAction) { action in
+            LumiaAIDataSharingConsentSheet {
+                continueAfterAIConsent(action)
+            }
+        }
         .alert(quotaNoticeTitle, isPresented: Binding(
             get: { quotaNotice != nil },
             set: { if !$0 { quotaNotice = nil } }
@@ -856,7 +874,25 @@ struct FullChatView: View {
             quotaNotice = "Your free voice preview is used for today. Text chat is still available, and Plus keeps longer voice sessions available."
             return
         }
+        guard hasAIDataSharingConsent else {
+            pendingAIConsentAction = .startCall(kind)
+            return
+        }
         activeCall = kind
+    }
+
+    private func continueAfterAIConsent(_ action: TherapyAIConsentAction) {
+        GeminiService.grantAIDataSharingConsent()
+        hasAIDataSharingConsent = true
+        pendingAIConsentAction = nil
+        DispatchQueue.main.async {
+            switch action {
+            case .sendMessage(let text):
+                send(text)
+            case .startCall(let kind):
+                startCallIfAllowed(kind)
+            }
+        }
     }
 
     private func recordLiveCallUsage(_ seconds: Int) {
@@ -1073,14 +1109,19 @@ struct FullChatView: View {
         }
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        let preflightTurn = ConversationEngine().prepareTurn(
+            userText: text,
+            currentState: conversationState
+        )
+        guard !preflightTurn.shouldUseAI || hasAIDataSharingConsent else {
+            pendingAIConsentAction = .sendMessage(text)
+            return
+        }
 
         messages.append(ChatMessage(id: UUID().uuidString, role: .user, text: text))
 
         let stateBeforeTurn = conversationState
-        let turnPreparation = ConversationEngine().prepareTurn(
-            userText: text,
-            currentState: conversationState
-        )
+        let turnPreparation = preflightTurn
         riskLevel = turnPreparation.safetyAssessment.riskLevel
         conversationState = turnPreparation.nextState
         let contextBrief = turnPreparation.shouldUseAI
@@ -1362,7 +1403,7 @@ final class TherapyCallSessionController: NSObject, ObservableObject {
             try audioSession.setCategory(
                 .playAndRecord,
                 mode: .voiceChat,
-                options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
+                options: [.defaultToSpeaker, .luminaAllowBluetoothHFP, .allowBluetoothA2DP]
             )
             try audioSession.setActive(true)
             try audioSession.overrideOutputAudioPort(.speaker)
@@ -1631,6 +1672,16 @@ final class TherapyLiveCallController: ObservableObject {
         toneFeedback.startDialTone()
 
         Task {
+            guard GeminiService.hasAIDataSharingConsent else {
+                await MainActor.run {
+                    self.markFailed(
+                        GeminiServiceError.aiDataSharingConsentRequired.localizedDescription,
+                        output: GeminiServiceError.aiDataSharingConsentRequired.localizedDescription
+                    )
+                }
+                return
+            }
+
             guard await requestRecordPermission() else {
                 await MainActor.run {
                     self.markFailed(

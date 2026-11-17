@@ -104,7 +104,6 @@ struct TimelineTabView: View {
                     confirmDelete(entry)
                 }
             )
-            .luminaFoldSafeSheet()
         }
     }
 
@@ -568,7 +567,10 @@ private struct JournalPreviewView: View {
                 JournalEditorView(editingEntry: entry)
                     .id("preview-edit-\(entry.id)")
             } else {
+                // The editor lays itself out across the fold; the preview
+                // keeps to the left screen.
                 previewBody
+                    .luminaFoldSafeSheet()
             }
         }
         .presentationDetents([.large])
