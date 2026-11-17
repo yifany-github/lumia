@@ -278,11 +278,17 @@ struct ProfileView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
-                    heroSection
-                    quietOverview
-                    settingsSection
-                    dangerZone
-                    appFooter
+                    // Unfolded iPhone Duo: who you are and your overview on the
+                    // left screen, settings and data on the right.
+                    LuminaFoldColumns(spacing: 0) { _ in
+                        heroSection
+                        quietOverview
+                    } trailing: { isSplit in
+                        settingsSection
+                            .padding(.top, isSplit ? 32 : 0)
+                        dangerZone
+                        appFooter
+                    }
                     Spacer(minLength: 80)
                 }
             }
@@ -1166,6 +1172,8 @@ struct ProfileView: View {
 
                     Button(appState.isSignedIn ? "Manage" : "Sign In", action: onAccount)
                         .luminaFont(size: 12, weight: .bold)
+                        .lineLimit(1)
+                        .fixedSize()
                         .foregroundColor(.organicPrimary)
                         .padding(.horizontal, 14)
                         .frame(height: 34)
@@ -1264,6 +1272,8 @@ struct ProfileView: View {
                         .luminaFont(size: 9, weight: .black)
                     Text(title)
                         .luminaFont(size: 10, weight: .black)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
                 .foregroundColor(.organicPrimary)
                 .padding(.horizontal, 9)

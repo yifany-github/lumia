@@ -165,8 +165,8 @@ struct DashboardView: View {
                 .luminaFoldSafeSheet()
         }
         .sheet(isPresented: $showingProfile) {
+            // Lays itself out either side of the fold when unfolded.
             ProfileView()
-                .luminaFoldSafeSheet()
         }
         .onAppear {
             syncCheckInState()
