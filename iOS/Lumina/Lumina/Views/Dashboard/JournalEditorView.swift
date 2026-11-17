@@ -4,6 +4,7 @@ import SwiftUI
 struct JournalEditorView: View {
     @Environment(\.presentationMode) var presentationMode
     @EnvironmentObject var appState: AppState
+    @AppStorage(GeminiService.aiDataSharingConsentKey) private var hasAIDataSharingConsent = false
     @StateObject private var speechInput = SpeechInputController()
 
     let editingEntry: JournalEntry?
@@ -26,6 +27,14 @@ struct JournalEditorView: View {
     @State private var isAnalyzingDistortions = false
     @State private var activeDistortion: CognitiveDistortion? = nil
     @State private var errorMsg: String? = nil
+    @State private var pendingAIConsentAction: JournalAIConsentAction?
+
+    private enum JournalAIConsentAction: String, Identifiable {
+        case reflect
+        case prism
+
+        var id: String { rawValue }
+    }
 
     let prompts = [
         "What is one thing that made you smile today?",
@@ -85,11 +94,14 @@ struct JournalEditorView: View {
 
     var body: some View {
         NavigationView {
+            LuminaFoldReader { crease in
             ZStack {
                 JournalEditorBackdrop().ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 16) {
+                    // Unfolded iPhone Duo: write on the left screen; mood, Lumia's
+                    // reflection, context and saving on the right.
+                    LuminaFoldColumns(alignment: .leading, spacing: 16) { _ in
                         VStack(alignment: .leading, spacing: 8) {
                             Text(editingEntry == nil ? "New Reflection" : "Edit Reflection")
                                 .luminaFont(size: 28, weight: .bold, design: .serif)
@@ -170,6 +182,7 @@ struct JournalEditorView: View {
                         }
                         .padding(16)
                         .background(JournalEditorSurface(cornerRadius: 24))
+                    } trailing: { _ in
 
                         VStack(alignment: .leading, spacing: 10) {
                             Text("MOOD")
@@ -392,7 +405,8 @@ struct JournalEditorView: View {
                     .padding(.bottom, 34)
                 }
             }
-            .navigationTitle(editingEntry == nil ? "New Reflection" : "Edit Reflection")
+            // Unfolded, the inline title would sit on the fold; the page has its own heading.
+            .navigationTitle(crease != nil ? "" : (editingEntry == nil ? "New Reflection" : "Edit Reflection"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color.organicBackground, for: .navigationBar)
             .toolbar {
@@ -415,6 +429,12 @@ struct JournalEditorView: View {
             }
             .onDisappear {
                 speechInput.cancel()
+            }
+            }
+        }
+        .sheet(item: $pendingAIConsentAction) { action in
+            LumiaAIDataSharingConsentSheet {
+                continueAfterAIConsent(action)
             }
         }
     }
@@ -449,6 +469,10 @@ struct JournalEditorView: View {
         guard !trimmedContent.isEmpty else { return }
         guard appState.isNetworkAvailable else {
             errorMsg = GeminiService.networkUnavailableMessage
+            return
+        }
+        guard hasAIDataSharingConsent else {
+            pendingAIConsentAction = .reflect
             return
         }
         speechInput.stop()
@@ -490,6 +514,10 @@ struct JournalEditorView: View {
             errorMsg = GeminiService.networkUnavailableMessage
             return
         }
+        guard hasAIDataSharingConsent else {
+            pendingAIConsentAction = .prism
+            return
+        }
         speechInput.stop()
         isAnalyzingDistortions = true
         isPrismMode = true
@@ -510,6 +538,20 @@ struct JournalEditorView: View {
                         fallback: "Prism could not reframe this entry right now. Try again in a moment."
                     )
                 }
+            }
+        }
+    }
+
+    private func continueAfterAIConsent(_ action: JournalAIConsentAction) {
+        GeminiService.grantAIDataSharingConsent()
+        hasAIDataSharingConsent = true
+        pendingAIConsentAction = nil
+        DispatchQueue.main.async {
+            switch action {
+            case .reflect:
+                analyzeEntry()
+            case .prism:
+                analyzePrism()
             }
         }
     }
@@ -666,6 +708,17 @@ private struct JournalMarkdownToolbar: View {
     let onApply: (JournalMarkdownTool) -> Void
 
     var body: some View {
+        // Where the row is too narrow for the labels (the left screen of an
+        // unfolded iPhone Duo, a small phone), show the icons alone rather
+        // than truncating every label.
+        ViewThatFits(in: .horizontal) {
+            row(showsTitles: true)
+            row(showsTitles: false)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func row(showsTitles: Bool) -> some View {
         HStack(spacing: 8) {
             ForEach(JournalMarkdownTool.allCases) { tool in
                 Button {
@@ -674,12 +727,15 @@ private struct JournalMarkdownToolbar: View {
                     HStack(spacing: 5) {
                         Image(systemName: tool.systemImage)
                             .luminaFont(size: 11, weight: .black)
-                        Text(tool.title)
-                            .luminaFont(size: 11, weight: .black)
-                            .lineLimit(1)
+                        if showsTitles {
+                            Text(tool.title)
+                                .luminaFont(size: 11, weight: .black)
+                                .lineLimit(1)
+                                .fixedSize()
+                        }
                     }
                     .foregroundColor(.organicMutedFg)
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, showsTitles ? 10 : 12)
                     .frame(height: 30)
                     .background(Color.organicMuted.opacity(0.76))
                     .clipShape(Capsule())
@@ -689,11 +745,11 @@ private struct JournalMarkdownToolbar: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(tool.title)
             }
 
             Spacer(minLength: 0)
         }
-        .accessibilityElement(children: .contain)
     }
 }
 

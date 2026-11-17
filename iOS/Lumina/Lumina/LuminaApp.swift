@@ -3,8 +3,6 @@ import UIKit
 import UserNotifications
 import LocalAuthentication
 import AuthenticationServices
-import CryptoKit
-import Security
 import FirebaseCore
 import GoogleSignIn
 
@@ -78,6 +76,7 @@ struct LuminaApp: App {
                     .interactiveDismissDisabled(false)
                 }
                 .onAppear {
+                    applyDebugLaunchOptionsIfNeeded()
                     LuminaAppearanceMode.applyInterfaceStyleOverride(appearanceModeRawValue)
                     handleNotificationRequest(notificationRouter.pendingRequest)
                     dismissStartupAfterDelay()
@@ -152,6 +151,17 @@ struct LuminaApp: App {
     private func completeWelcomeGuide() {
         hasCompletedWelcomeGuide = true
         isReplayingWelcomeGuide = false
+    }
+
+    private func applyDebugLaunchOptionsIfNeeded() {
+        guard LuminaDebugLaunchOptions.completesWelcomeGuide || LuminaDebugLaunchOptions.seedsGardenDemo else { return }
+        if LuminaDebugLaunchOptions.completesWelcomeGuide {
+            hasCompletedWelcomeGuide = true
+            isReplayingWelcomeGuide = false
+        }
+        if LuminaDebugLaunchOptions.seedsGardenDemo {
+            appState.seedGardenDebugDemoIfNeeded()
+        }
     }
 
     private func handleNotificationRequest(_ request: NotificationNavigationRequest?) {
@@ -268,7 +278,6 @@ private struct RegistrationGateView: View {
     @State private var confirmPassword = ""
     @State private var isSubmitting = false
     @State private var errorMessage: String?
-    @State private var currentAppleNonce: String?
 
     init(onClose: @escaping () -> Void) {
         self.onClose = onClose
@@ -287,12 +296,17 @@ private struct RegistrationGateView: View {
                 .ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 22) {
-                        header
-                        formPanel
+                    // Unfolded iPhone Duo centres this sheet on the fold: the
+                    // introduction on the left screen, the form on the right.
+                    LuminaFoldReader { crease in
+                        LuminaFoldColumns(spacing: 22) { _ in
+                            header
+                        } trailing: { _ in
+                            formPanel
+                        }
+                        .frame(maxWidth: crease == nil ? 520 : .infinity)
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: 520)
-                    .frame(maxWidth: .infinity)
                     .padding(.horizontal, 24)
                     .padding(.top, max(proxy.safeAreaInsets.top + 22, 46))
                     .padding(.bottom, max(proxy.safeAreaInsets.bottom + 28, 42))
@@ -564,6 +578,7 @@ private struct RegistrationGateView: View {
             }
             clearSensitiveFields()
         } catch {
+            luminaLogAuthenticationError(error, context: "registration_gate.email")
             errorMessage = userFacingAuthError(error)
         }
     }
@@ -571,12 +586,10 @@ private struct RegistrationGateView: View {
     private func prepareAppleAuthorizationRequest(_ request: ASAuthorizationAppleIDRequest) {
         errorMessage = nil
         do {
-            let nonce = try RegistrationGateNonce.random()
-            currentAppleNonce = nonce
-            request.requestedScopes = [.fullName, .email]
-            request.nonce = RegistrationGateNonce.sha256(nonce)
+            try LuminaAppleSignInCoordinator.prepare(request)
         } catch {
-            currentAppleNonce = nil
+            LuminaAppleSignInCoordinator.cancelPendingNonces()
+            luminaLogAuthenticationError(error, context: "registration_gate.apple_prepare")
             errorMessage = userFacingAuthError(error)
         }
     }
@@ -588,7 +601,11 @@ private struct RegistrationGateView: View {
                 errorMessage = "Apple sign-in returned an unexpected response."
                 return
             }
-            guard let rawNonce = currentAppleNonce else {
+            guard let rawNonce = LuminaAppleSignInCoordinator.consumeNonce(from: credential) else {
+                luminaLogAuthenticationError(
+                    LuminaAuthError.providerUnavailable("Missing Apple sign-in nonce for registration gate."),
+                    context: "registration_gate.apple_missing_nonce"
+                )
                 errorMessage = "Apple sign-in could not be verified. Try again."
                 return
             }
@@ -604,7 +621,7 @@ private struct RegistrationGateView: View {
                 isSubmitting = true
                 defer {
                     isSubmitting = false
-                    currentAppleNonce = nil
+                    LuminaAppleSignInCoordinator.cancelPendingNonces()
                 }
 
                 do {
@@ -616,15 +633,17 @@ private struct RegistrationGateView: View {
                     )
                     clearSensitiveFields()
                 } catch {
+                    luminaLogAuthenticationError(error, context: "registration_gate.apple")
                     errorMessage = userFacingAuthError(error)
                 }
             }
         case .failure(let error):
-            currentAppleNonce = nil
+            LuminaAppleSignInCoordinator.cancelPendingNonces()
             if let authorizationError = error as? ASAuthorizationError,
                authorizationError.code == .canceled {
                 errorMessage = nil
             } else {
+                luminaLogAuthenticationError(error, context: "registration_gate.apple_authorization")
                 errorMessage = userFacingAuthError(error)
             }
         }
@@ -641,6 +660,7 @@ private struct RegistrationGateView: View {
             _ = try await appState.signInWithGoogle()
             clearSensitiveFields()
         } catch {
+            luminaLogAuthenticationError(error, context: "registration_gate.google")
             errorMessage = userFacingAuthError(error)
         }
     }
@@ -651,28 +671,7 @@ private struct RegistrationGateView: View {
     }
 
     private func userFacingAuthError(_ error: Error) -> String {
-        if let authError = error as? LuminaAuthError {
-            return authError.localizedDescription
-        }
-
-        let message = error.localizedDescription
-        if message.localizedCaseInsensitiveContains("network") ||
-            message.localizedCaseInsensitiveContains("timed out") ||
-            message.localizedCaseInsensitiveContains("offline") {
-            return "The connection was interrupted. Check your network and try again."
-        }
-        if message.localizedCaseInsensitiveContains("password") {
-            return "The email or password does not look right."
-        }
-        if message.localizedCaseInsensitiveContains("email") {
-            return "Check the email address and try again."
-        }
-        if message.localizedCaseInsensitiveContains("cancel") {
-            return "Sign in was cancelled."
-        }
-        return mode == .register
-            ? "Account creation could not be completed. Please try again."
-            : "Sign in could not be completed. Please try again."
+        luminaUserFacingAuthError(error, context: mode == .register ? .registration : .signIn)
     }
 }
 
@@ -753,38 +752,6 @@ private struct RegistrationGateInput: View {
         } else {
             TextField(placeholder, text: $text)
         }
-    }
-}
-
-private enum RegistrationGateNonce {
-    private static let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
-
-    static func random(length: Int = 32) throws -> String {
-        precondition(length > 0)
-        var result = ""
-        result.reserveCapacity(length)
-
-        while result.count < length {
-            var randomByte: UInt8 = 0
-            let status = SecRandomCopyBytes(kSecRandomDefault, 1, &randomByte)
-            guard status == errSecSuccess else {
-                throw NSError(
-                    domain: "LuminaRegistrationGate",
-                    code: Int(status),
-                    userInfo: [NSLocalizedDescriptionKey: "Apple sign-in could not start securely. Try again."]
-                )
-            }
-            if randomByte < charset.count {
-                result.append(charset[Int(randomByte)])
-            }
-        }
-
-        return result
-    }
-
-    static func sha256(_ input: String) -> String {
-        let digest = SHA256.hash(data: Data(input.utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -954,6 +921,24 @@ enum WelcomeGuideStorage {
     static let completionKey = "lumina.hasCompletedWelcomeGuide"
 }
 
+#if DEBUG
+enum LuminaDebugLaunchOptions {
+    private static let arguments = Set(ProcessInfo.processInfo.arguments)
+
+    static let completesWelcomeGuide = arguments.contains("--lumina-debug-complete-welcome")
+    static let unlocksTabs = arguments.contains("--lumina-debug-unlocked-tabs")
+    static let opensGarden = arguments.contains("--lumina-debug-open-garden")
+    static let seedsGardenDemo = arguments.contains("--lumina-debug-garden-demo")
+}
+#else
+enum LuminaDebugLaunchOptions {
+    static let completesWelcomeGuide = false
+    static let unlocksTabs = false
+    static let opensGarden = false
+    static let seedsGardenDemo = false
+}
+#endif
+
 extension Notification.Name {
     static let luminaShowWelcomeGuide = Notification.Name("lumina.showWelcomeGuide")
     static let luminaShowRegistrationGate = Notification.Name("lumina.showRegistrationGate")
@@ -976,19 +961,39 @@ struct WelcomeGuideView: View {
                 topBar
 
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 22) {
+                    // Unfolded iPhone Duo: what Lumia is on the left screen,
+                    // where to start on the right, nothing across the fold.
+                    LuminaFoldColumns(spacing: 22) { _ in
                         welcomeHeader
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         WelcomeGuideEssentialsCard()
                         WelcomeGuidePlanCard(hasPremiumAccess: appState.hasPremiumAccess)
+                    } trailing: { isSplit in
                         WelcomeGuideStartPicker(selectedStart: $selectedStart)
                         welcomeBoundaryNote
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        // Unfolded, the start button follows the picker in the
+                        // right column, leaving the left column its full height.
+                        if isSplit {
+                            footer(inColumn: true)
+                        }
                     }
                     .padding(.horizontal, 22)
                     .padding(.top, 20)
                     .padding(.bottom, 18)
                 }
 
-                footer
+                LuminaFoldReader { crease in
+                    VStack(spacing: 0) {
+                        // Keeps the reader on screen while the footer is in the
+                        // right column, so it can tell when the display folds.
+                        Color.clear.frame(height: 0)
+                        if crease == nil {
+                            footer(inColumn: false)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
             }
         }
     }
@@ -1061,7 +1066,7 @@ struct WelcomeGuideView: View {
         }
     }
 
-    private var footer: some View {
+    private func footer(inColumn: Bool) -> some View {
         VStack(spacing: 12) {
             Button {
                 startSelectedPath()
@@ -1086,9 +1091,9 @@ struct WelcomeGuideView: View {
             .luminaFont(size: 13, weight: .semibold)
             .foregroundColor(.organicMutedFg)
         }
-        .padding(.horizontal, 22)
+        .padding(.horizontal, inColumn ? 0 : 22)
         .padding(.top, 10)
-        .padding(.bottom, 24)
+        .padding(.bottom, inColumn ? 0 : 24)
     }
 
     private func startSelectedPath() {
@@ -1714,6 +1719,9 @@ struct RootTabView: View {
             if !canOpenTab(appState.selectedTab) {
                 appState.selectedTab = LuminaRootTab.home.rawValue
             }
+            if LuminaDebugLaunchOptions.opensGarden && canOpenTab(LuminaRootTab.garden.rawValue) {
+                appState.selectedTab = LuminaRootTab.garden.rawValue
+            }
             loadedTabs.insert(appState.selectedTab)
             hapticGenerator.prepare()
         }
@@ -1761,7 +1769,7 @@ struct RootTabView: View {
     }
 
     private func canOpenTab(_ tab: Int) -> Bool {
-        appState.isSignedIn || tab == LuminaRootTab.home.rawValue
+        appState.isSignedIn || tab == LuminaRootTab.home.rawValue || LuminaDebugLaunchOptions.unlocksTabs
     }
 
     private func requestRegistrationGate() {

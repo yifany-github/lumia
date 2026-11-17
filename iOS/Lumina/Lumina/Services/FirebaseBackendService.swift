@@ -34,13 +34,18 @@ final class FirebaseBackendService: ObservableObject {
 
     @discardableResult
     func registerEmail(displayName: String, email: String, password: String) async throws -> User {
-        let result = try await withTimeout(seconds: 16) {
+        let result = try await withTimeout(seconds: 30) {
             try await Auth.auth().createUser(withEmail: email, password: password)
         }
         let changeRequest = result.user.createProfileChangeRequest()
         changeRequest.displayName = displayName
-        try await changeRequest.commitChanges()
-        try await result.user.reload()
+        do {
+            try await changeRequest.commitChanges()
+            try await result.user.reload()
+        } catch {
+            lastError = error.localizedDescription
+            luminaLogAuthenticationError(error, context: "firebase.email_profile_update")
+        }
         let user = Auth.auth().currentUser ?? result.user
         currentUser = user
         syncUserProfileInBackground(user: user, displayName: displayName)
@@ -49,7 +54,7 @@ final class FirebaseBackendService: ObservableObject {
 
     @discardableResult
     func signInEmail(email: String, password: String) async throws -> User {
-        let result = try await withTimeout(seconds: 16) {
+        let result = try await withTimeout(seconds: 30) {
             try await Auth.auth().signIn(withEmail: email, password: password)
         }
         currentUser = result.user
@@ -78,7 +83,7 @@ final class FirebaseBackendService: ObservableObject {
             withIDToken: idToken,
             accessToken: signInResult.user.accessToken.tokenString
         )
-        let result = try await withTimeout(seconds: 16) {
+        let result = try await withTimeout(seconds: 30) {
             try await Auth.auth().signIn(with: credential)
         }
         currentUser = result.user
@@ -93,7 +98,7 @@ final class FirebaseBackendService: ObservableObject {
             rawNonce: rawNonce,
             fullName: fullName
         )
-        let result = try await withTimeout(seconds: 16) {
+        let result = try await withTimeout(seconds: 30) {
             try await Auth.auth().signIn(with: credential)
         }
         currentUser = result.user

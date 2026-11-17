@@ -10,6 +10,7 @@ struct RevenueCatPlan: Identifiable, Equatable {
     let price: String
     let detail: String
     let isRecommended: Bool
+    let isPurchasable: Bool
 }
 
 @MainActor
@@ -25,7 +26,8 @@ final class RevenueCatSubscriptionService: ObservableObject {
             title: "Lumia Plus Yearly",
             price: "$64.99/year",
             detail: "1 year auto-renewing subscription. Cancel anytime in App Store settings.",
-            isRecommended: true
+            isRecommended: true,
+            isPurchasable: false
         ),
         RevenueCatPlan(
             id: "lumia_plus_monthly_v2",
@@ -34,7 +36,8 @@ final class RevenueCatSubscriptionService: ObservableObject {
             title: "Lumia Plus Monthly",
             price: "$4.99/month",
             detail: "1 month auto-renewing subscription. Cancel anytime in App Store settings.",
-            isRecommended: false
+            isRecommended: false,
+            isPurchasable: false
         )
     ]
 
@@ -249,7 +252,8 @@ final class RevenueCatSubscriptionService: ObservableObject {
                 detail: isYearly
                     ? "Yearly auto-renewing subscription. Cancel anytime in App Store settings."
                     : "Monthly auto-renewing subscription. Cancel anytime in App Store settings.",
-                isRecommended: isYearly
+                isRecommended: isYearly,
+                isPurchasable: true
             )
         }
     }
@@ -277,7 +281,8 @@ final class RevenueCatSubscriptionService: ObservableObject {
                 detail: isYearly
                     ? "Yearly auto-renewing subscription. Cancel anytime in App Store settings."
                     : "Monthly auto-renewing subscription. Cancel anytime in App Store settings.",
-                isRecommended: isYearly
+                isRecommended: isYearly,
+                isPurchasable: true
             )
         }
     }
@@ -300,7 +305,8 @@ final class RevenueCatSubscriptionService: ObservableObject {
                 detail: isYearly
                     ? "Yearly auto-renewing subscription. Cancel anytime in App Store settings."
                     : "Monthly auto-renewing subscription. Cancel anytime in App Store settings.",
-                isRecommended: isYearly
+                isRecommended: isYearly,
+                isPurchasable: true
             )
         }
     }
@@ -371,17 +377,33 @@ final class RevenueCatSubscriptionService: ObservableObject {
         return .active
     }
 
-    private static func readableErrorMessage(from error: Error) -> String {
+    static func userFacingErrorMessage(from error: Error) -> String {
         let message = error.localizedDescription
+        if message.localizedCaseInsensitiveContains("cancel") {
+            return "Purchase was cancelled."
+        }
+        if message.localizedCaseInsensitiveContains("pending") {
+            return "Purchase is pending approval."
+        }
         if message.localizedCaseInsensitiveContains("offerings-empty")
             || message.localizedCaseInsensitiveContains("could be fetched from App Store Connect")
-            || message.localizedCaseInsensitiveContains("no App Store products registered") {
+            || message.localizedCaseInsensitiveContains("no App Store products registered")
+            || message.localizedCaseInsensitiveContains("invalid product")
+            || message.localizedCaseInsensitiveContains("product not available")
+            || message.localizedCaseInsensitiveContains("storekit")
+            || message.localizedCaseInsensitiveContains("sandbox")
+            || message.localizedCaseInsensitiveContains("asderrordomain")
+            || message.localizedCaseInsensitiveContains("amserrordomain") {
             return "Plans are temporarily unavailable. Please try again later."
         }
         if message.localizedCaseInsensitiveContains("network") {
             return "Plans could not load because the network is unavailable. Try again in a moment."
         }
         return message
+    }
+
+    private static func readableErrorMessage(from error: Error) -> String {
+        userFacingErrorMessage(from: error)
     }
 
     private static func verified<T>(_ result: StoreKit.VerificationResult<T>) throws -> T {

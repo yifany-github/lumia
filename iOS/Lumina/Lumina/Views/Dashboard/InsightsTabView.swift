@@ -4,11 +4,18 @@ import SwiftUI
 struct InsightsTabView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(GeminiService.aiDataSharingConsentKey) private var hasAIDataSharingConsent = false
     @State private var insights: DeepInsights? = nil
     @State private var isLoading = false
     @State private var errorMsg: String? = nil
     @State private var lastGeneratedAt: TimeInterval?
     @State private var didCheckDailyGeneration = false
+    @State private var pendingAIConsentAction: InsightsAIConsentAction?
+
+    private struct InsightsAIConsentAction: Identifiable {
+        let force: Bool
+        var id: String { force ? "manual" : "automatic" }
+    }
 
     private var canUseDeepInsights: Bool {
         appState.canUse(.deepInsights)
@@ -29,6 +36,11 @@ struct InsightsTabView: View {
         .onAppear {
             loadCachedInsights()
             generateDailyInsightsIfNeeded()
+        }
+        .sheet(item: $pendingAIConsentAction) { action in
+            LumiaAIDataSharingConsentSheet {
+                continueAfterAIConsent(action)
+            }
         }
     }
     
@@ -291,6 +303,13 @@ struct InsightsTabView: View {
             errorMsg = GeminiService.networkUnavailableMessage
             return
         }
+        guard hasAIDataSharingConsent else {
+            isLoading = false
+            if force {
+                pendingAIConsentAction = InsightsAIConsentAction(force: force)
+            }
+            return
+        }
         if !force,
            let cached = appState.dailyJournalInsights,
            cached.dateKey == appState.journalInsightDateKey() {
@@ -325,6 +344,15 @@ struct InsightsTabView: View {
                     )
                 }
             }
+        }
+    }
+
+    private func continueAfterAIConsent(_ action: InsightsAIConsentAction) {
+        GeminiService.grantAIDataSharingConsent()
+        hasAIDataSharingConsent = true
+        pendingAIConsentAction = nil
+        DispatchQueue.main.async {
+            fetchInsights(force: action.force)
         }
     }
 

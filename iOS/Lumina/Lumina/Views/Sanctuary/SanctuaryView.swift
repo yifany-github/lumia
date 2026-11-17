@@ -24,7 +24,9 @@ struct SanctuaryView: View {
             Color.organicBackground.ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 16) {
+                // Unfolded: choose a feeling and its exercise on the left screen;
+                // other tools, the affirmation and safety on the right.
+                LuminaFoldColumns(spacing: 16) { _ in
                     SanctuaryHeroHeader()
 
                     SanctuaryFeelingPicker(selection: $selectedFeeling)
@@ -34,7 +36,7 @@ struct SanctuaryView: View {
                         need: recommendedNeed,
                         action: { open(recommendedNeed, reason: "sanctuary.recommendation.\(selectedFeeling.rawValue)") }
                     )
-
+                } trailing: { _ in
                     SanctuaryToolShelf(
                         recommendedNeed: recommendedNeed,
                         action: { open($0, reason: "sanctuary.tool.secondary.\($0.rawValue)") }
@@ -58,65 +60,68 @@ struct SanctuaryView: View {
             }
         }
         .sheet(item: $activeSheet) { sheet in
-            switch sheet {
-            case .slowExhale:
-                SlowExhaleExerciseView {
-                    complete(.breathing, reason: "sanctuary.slow_exhale_completed")
-                }
-            case .breathing:
-                BreathingExerciseView {
-                    complete(.breathing, reason: "sanctuary.breathing_completed")
-                }
-            case .bodyScan:
-                BodyScanExerciseView {
-                    complete(.grounding, reason: "sanctuary.body_scan_completed")
-                }
-            case .grounding:
-                GroundingExerciseView {
-                    complete(.grounding, reason: "sanctuary.grounding_completed")
-                }
-            case .journalPrompt:
-                SanctuaryJournalPromptView(
-                    affirmation: currentAffirmation,
-                    onOpenJournal: {
-                        complete(.journalingPrompt, reason: "sanctuary.journal_prompt_accepted")
-                        activeSheet = nil
-                        appState.selectedTab = 1
+            Group {
+                switch sheet {
+                case .slowExhale:
+                    SlowExhaleExerciseView {
+                        complete(.breathing, reason: "sanctuary.slow_exhale_completed")
                     }
-                )
-            case .support:
-                SanctuarySupportChoiceView(
-                    onTalkToGuide: {
-                        activeSheet = nil
-                        let therapist = allTherapists.first(where: { $0.name == "Serena" }) ?? allTherapists[0]
-                        appState.requestTherapy(with: therapist)
-                        recordLater(
-                            kind: .reflectiveListening,
-                            outcome: .accepted,
-                            reason: "sanctuary.support.talk_to_guide"
-                        )
-                    },
-                    onGroundFirst: {
-                        activeSheet = .grounding
-                        recordLater(
-                            kind: .grounding,
-                            outcome: .accepted,
-                            reason: "sanctuary.support.ground_first"
-                        )
-                    },
-                    onCrisisResources: {
-                        openCrisis()
+                case .breathing:
+                    BreathingExerciseView {
+                        complete(.breathing, reason: "sanctuary.breathing_completed")
                     }
-                )
-            case .crisis:
-                CrisisSupportView { resource in
-                    recordLater(
-                        kind: .crisisSupport,
-                        outcome: .accepted,
-                        reason: "sanctuary.safety_resource.\(resource)"
+                case .bodyScan:
+                    BodyScanExerciseView {
+                        complete(.grounding, reason: "sanctuary.body_scan_completed")
+                    }
+                case .grounding:
+                    GroundingExerciseView {
+                        complete(.grounding, reason: "sanctuary.grounding_completed")
+                    }
+                case .journalPrompt:
+                    SanctuaryJournalPromptView(
+                        affirmation: currentAffirmation,
+                        onOpenJournal: {
+                            complete(.journalingPrompt, reason: "sanctuary.journal_prompt_accepted")
+                            activeSheet = nil
+                            appState.selectedTab = 1
+                        }
                     )
+                case .support:
+                    SanctuarySupportChoiceView(
+                        onTalkToGuide: {
+                            activeSheet = nil
+                            let therapist = allTherapists.first(where: { $0.name == "Serena" }) ?? allTherapists[0]
+                            appState.requestTherapy(with: therapist)
+                            recordLater(
+                                kind: .reflectiveListening,
+                                outcome: .accepted,
+                                reason: "sanctuary.support.talk_to_guide"
+                            )
+                        },
+                        onGroundFirst: {
+                            activeSheet = .grounding
+                            recordLater(
+                                kind: .grounding,
+                                outcome: .accepted,
+                                reason: "sanctuary.support.ground_first"
+                            )
+                        },
+                        onCrisisResources: {
+                            openCrisis()
+                        }
+                    )
+                case .crisis:
+                    CrisisSupportView { resource in
+                        recordLater(
+                            kind: .crisisSupport,
+                            outcome: .accepted,
+                            reason: "sanctuary.safety_resource.\(resource)"
+                        )
+                    }
                 }
             }
+            .luminaFoldSafeSheet()
         }
     }
 

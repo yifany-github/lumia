@@ -692,7 +692,7 @@
 			repositoryURL = "https://github.com/RevenueCat/purchases-ios.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 5.0.0;
+				minimumVersion = 5.78.0;
 			};
 		};
 		C8F759C020BDC49FDE4574ED /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
@@ -700,7 +700,7 @@
 			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 12.0.0;
+				minimumVersion = 12.16.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

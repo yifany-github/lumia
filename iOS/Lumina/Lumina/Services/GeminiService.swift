@@ -332,6 +332,7 @@ private extension ConversationState {
 // MARK: - Lumia AI Gateway
 enum GeminiServiceError: LocalizedError {
     case notSignedIn
+    case aiDataSharingConsentRequired
     case backendUnavailable
     case backendPermissionMissing
     case emptyResponse
@@ -342,6 +343,8 @@ enum GeminiServiceError: LocalizedError {
         switch self {
         case .notSignedIn:
             return "Sign in to use Lumia AI."
+        case .aiDataSharingConsentRequired:
+            return "Review and allow AI data sharing before using Lumia AI."
         case .backendUnavailable:
             return "Lumia AI is unavailable right now. Try again in a moment."
         case .backendPermissionMissing:
@@ -381,9 +384,18 @@ enum GeminiServiceError: LocalizedError {
 class GeminiService {
     static let shared = GeminiService()
     static let networkUnavailableMessage = "You're offline. AI replies, calls, and sync need a connection."
+    static let aiDataSharingConsentKey = "lumia.aiDataSharingConsent.v1"
     private let fallbackProjectID = "lumia-cd3d2"
     private var cachedRuntimeConfig: LuminaAIRuntimeConfig?
     private var cachedRuntimeConfigDate: Date?
+
+    static var hasAIDataSharingConsent: Bool {
+        UserDefaults.standard.bool(forKey: aiDataSharingConsentKey)
+    }
+
+    static func grantAIDataSharingConsent() {
+        UserDefaults.standard.set(true, forKey: aiDataSharingConsentKey)
+    }
 
     static func userFacingMessage(for error: Error, fallback: String = "Lumia AI could not complete this request. Try again in a moment.") -> String {
         if let serviceError = error as? GeminiServiceError {
@@ -665,6 +677,11 @@ class GeminiService {
     }
 
     private func callGateway(feature: String, payload: [String: Any]) async throws -> [String: Any] {
+        if Self.requiresAIDataSharingConsent(for: feature),
+           !Self.hasAIDataSharingConsent {
+            throw GeminiServiceError.aiDataSharingConsentRequired
+        }
+
         guard let user = Auth.auth().currentUser else {
             throw GeminiServiceError.notSignedIn
         }
@@ -713,6 +730,15 @@ class GeminiService {
             throw GeminiServiceError.gatewayError(statusCode: http.statusCode, message: message)
         }
         return json
+    }
+
+    private static func requiresAIDataSharingConsent(for feature: String) -> Bool {
+        let nonContentFeatures: Set<String> = [
+            "runtimeConfig",
+            "startLiveCall",
+            "recordVoiceUsage"
+        ]
+        return !nonContentFeatures.contains(feature)
     }
 
     private func idToken(for user: User) async throws -> String {

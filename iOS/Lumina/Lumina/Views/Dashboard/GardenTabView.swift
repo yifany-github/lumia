@@ -331,6 +331,15 @@ struct GardenTabView: View {
             )
         }
 
+        if completedCount == 0, let nextHabit = appState.habits.first(where: { !completedHabitIDsToday.contains($0.id) }) {
+            return GardenNextMove(
+                title: "Revisit one visible trace",
+                detail: nextHabit.title,
+                systemImage: "checkmark.seal.fill",
+                tint: Color(hex: 0x5FA461)
+            )
+        }
+
         if let invitation = appState.activeGardenVisitorInvitation {
             if !invitation.isAccepted {
                 return GardenNextMove(
@@ -356,15 +365,6 @@ struct GardenTabView: View {
                 detail: "\(min(progress, invitation.targetCount))/\(invitation.targetCount) with \(invitation.visitor.displayName).",
                 systemImage: invitation.invitationKind.systemImage,
                 tint: invitation.visitor.accent
-            )
-        }
-
-        if completedCount == 0, let nextHabit = appState.habits.first(where: { !completedHabitIDsToday.contains($0.id) }) {
-            return GardenNextMove(
-                title: "Touch one visible trace",
-                detail: nextHabit.title,
-                systemImage: "checkmark.seal.fill",
-                tint: Color(hex: 0x5FA461)
             )
         }
 
@@ -453,6 +453,7 @@ struct GardenTabView: View {
 
                     GardenWorldScene(
                         habits: appState.habits,
+                        journalEntries: appState.entries,
                         waterDrops: appState.waterDrops,
                         selectedTool: selectedTool,
                         readyTracePromptCount: readyTracePromptCount,
@@ -481,13 +482,6 @@ struct GardenTabView: View {
                         onPlotTap: handlePlotTap
                     )
 
-                    GardenSceneAtmosphereLayer(
-                        traceCount: appState.habits.count,
-                        memoryDepth: gardenMemoryDepth,
-                        atmosphere: atmosphere
-                    )
-                        .allowsHitTesting(false)
-
                 VStack(spacing: 0) {
                     GardenMemoryHeader(
                         traceCount: appState.habits.count,
@@ -498,6 +492,23 @@ struct GardenTabView: View {
                     .padding(.horizontal, 18)
                     .padding(.top, 8)
 
+                    if !showingGardenFirstVisitGuide || gardenFirstVisitGuideStep == .shelf {
+                        GardenMemoryWhisperBar(
+                            totalCount: appState.habits.count,
+                            nextMove: gardenNextMove,
+                            stages: gardenRhythmStages,
+                            readyTracePromptCount: readyTracePromptCount,
+                            onOpenBoard: { showingMemoryShelf = true }
+                        )
+                        .padding(.horizontal, 22)
+                        .padding(.top, 7)
+                        .frame(maxWidth: 310)
+                        // Unfolded iPhone Duo: under the title, not on the fold.
+                        .luminaBesideFold()
+                        .opacity(showingGardenFirstVisitGuide ? 0.82 : 1)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+
                     Spacer(minLength: 0)
 
                     if let gardenToast {
@@ -505,15 +516,6 @@ struct GardenTabView: View {
                             .padding(.horizontal, 22)
                             .padding(.bottom, 10)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
-                    } else if !showingGardenFirstVisitGuide || gardenFirstVisitGuideStep == .shelf {
-                        GardenMemoryWhisperBar(
-                            totalCount: appState.habits.count,
-                            onOpenBoard: { showingMemoryShelf = true }
-                        )
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, max(86, proxy.safeAreaInsets.bottom + 68))
-                        .opacity(showingGardenFirstVisitGuide ? 0.82 : 1)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
 
@@ -590,11 +592,13 @@ struct GardenTabView: View {
                 )
                 .presentationDetents([.height(500)])
                 .presentationDragIndicator(.visible)
+                .luminaFoldSafeSheet()
             }
         }
         .sheet(isPresented: $showingMemoryShelf) {
             GardenMemoryShelfSheet(
                 habits: appState.habits,
+                journalEntries: appState.entries,
                 waterDrops: appState.waterDrops,
                 completedHabitIDsToday: completedHabitIDsToday,
                 prompts: gardenTracePrompts,
@@ -640,6 +644,7 @@ struct GardenTabView: View {
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
+            .luminaFoldSafeSheet()
         }
         .sheet(isPresented: showingVisitorInvitationDetail) {
             if let invitation = selectedVisitorInvitation {
@@ -676,6 +681,7 @@ struct GardenTabView: View {
                 )
                 .presentationDetents([.height(560), .large])
                 .presentationDragIndicator(.visible)
+                .luminaFoldSafeSheet()
             }
         }
         .sheet(isPresented: showingAreaDetail) {
@@ -705,6 +711,7 @@ struct GardenTabView: View {
                 )
                 .presentationDetents([.height(650), .large])
                 .presentationDragIndicator(.visible)
+                .luminaFoldSafeSheet()
             }
         }
     }
@@ -1194,15 +1201,23 @@ private struct GardenStarterSeed: Identifiable {
 }
 
 private let gardenPlotPositions: [CGPoint] = [
-    CGPoint(x: 0.28, y: 0.43),
-    CGPoint(x: 0.72, y: 0.43),
-    CGPoint(x: 0.30, y: 0.58),
-    CGPoint(x: 0.70, y: 0.58),
+    CGPoint(x: 0.30, y: 0.38),
+    CGPoint(x: 0.70, y: 0.38),
+    CGPoint(x: 0.33, y: 0.61),
+    CGPoint(x: 0.67, y: 0.61),
     CGPoint(x: 0.50, y: 0.66),
     CGPoint(x: 0.49, y: 0.33),
     CGPoint(x: 0.39, y: 0.51),
     CGPoint(x: 0.61, y: 0.51)
 ]
+
+private func gardenTraceDepthScale(for mapY: CGFloat) -> CGFloat {
+    min(max(0.70 + mapY * 0.48, 0.84), 1.04)
+}
+
+private func gardenTraceNameplateYOffset(for mapY: CGFloat) -> CGFloat {
+    80 * gardenTraceDepthScale(for: mapY)
+}
 
 private let gardenKeepsakePositions: [CGPoint] = [
     CGPoint(x: 0.70, y: 0.59),
@@ -1662,9 +1677,9 @@ private extension GardenKeepsakeKind {
 
     var assetName: String {
         switch self {
-        case .pathCharm: return "GardenTraceWindCharmV2"
-        case .sunLantern: return "GardenTraceLanternV2"
-        case .seedArchive: return "GardenTraceMemoryStoneV2"
+        case .pathCharm: return "GardenBreathingWindCharmV3"
+        case .sunLantern: return "GardenRewardLanternV3"
+        case .seedArchive: return "GardenMemoryStoneV3"
         }
     }
 
@@ -1988,6 +2003,16 @@ private enum GardenAtmosphereKind: Equatable {
         }
     }
 
+    var shortTitle: String {
+        switch self {
+        case .clear: return "Clear"
+        case .morningDew: return "Dew"
+        case .softRain: return "Rain"
+        case .quietMist: return "Mist"
+        case .lanternHour: return "Lantern"
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .clear: return "leaf.fill"
@@ -2015,26 +2040,11 @@ private struct GardenGameBackdrop: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                Image("GardenWorldSpringQuietV2")
+                Image("GardenWorldMemoryGroveV3")
                     .resizable()
                     .scaledToFill()
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .clipped()
-
-                LinearGradient(
-                    colors: [
-                        Color(hex: 0xFFF6D8).opacity(0.10),
-                        Color.clear
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-
-                GardenBackdropAtmosphereWash(atmosphere: atmosphere)
-
-                if atmosphere == .lanternHour {
-                    GardenFireflies()
-                }
             }
         }
         .ignoresSafeArea()
@@ -2678,23 +2688,21 @@ private struct GardenMemoryHeader: View {
         HStack(alignment: .top, spacing: 12) {
             Button(action: onOpenBoard) {
                 HStack(spacing: 8) {
-                    Image(systemName: "leaf.fill")
-                        .luminaFont(size: 12, weight: .black)
-                        .foregroundColor(Color(hex: 0xF7F0D3))
+                    Image("GardenMoodSeedlingV3")
+                        .resizable()
+                        .scaledToFit()
                         .frame(width: 28, height: 28)
-                        .background(Color(hex: 0x3F633B).opacity(0.78))
-                        .clipShape(Circle())
 
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Lumia Garden")
                             .luminaFont(size: 14, weight: .black, design: .rounded)
-                            .foregroundColor(Color(hex: 0x24472A))
+                            .foregroundColor(Color(hex: 0x203B22))
                             .lineLimit(1)
                             .minimumScaleFactor(0.78)
 
                         Text(subtitle)
                             .luminaFont(size: 9, weight: .bold)
-                            .foregroundColor(Color(hex: 0x5E6A4F))
+                            .foregroundColor(Color(hex: 0x41513A))
                             .lineLimit(1)
                     }
 
@@ -2710,9 +2718,14 @@ private struct GardenMemoryHeader: View {
                 .padding(.leading, 8)
                 .padding(.trailing, quietCount > 0 ? 8 : 12)
                 .padding(.vertical, 6)
-                .background(Color(hex: 0xF9F0D8).opacity(0.34))
+                .background(
+                    Image("GardenHUDTitlePlaqueV4")
+                        .resizable()
+                        .scaledToFill()
+                        .opacity(0.94)
+                )
                 .clipShape(Capsule())
-                .overlay(Capsule().stroke(Color.white.opacity(0.26), lineWidth: 1))
+                .shadow(color: Color(hex: 0x17381F).opacity(0.20), radius: 8, x: 0, y: 4)
             }
             .buttonStyle(GardenPressableButtonStyle(pressedScale: 0.97, pressedOpacity: 0.90))
             .accessibilityLabel("Open Garden memory shelf")
@@ -2720,6 +2733,7 @@ private struct GardenMemoryHeader: View {
             Spacer(minLength: 0)
 
             GardenAtmosphereChip(atmosphere: atmosphere)
+                .layoutPriority(1)
         }
     }
 }
@@ -2729,67 +2743,135 @@ private struct GardenAtmosphereChip: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: atmosphere.systemImage)
-                .luminaFont(size: 10, weight: .black)
-            Text(atmosphere.title)
+            Image(atmosphere == .lanternHour ? "GardenRewardLanternV3" : "GardenDewDropTokenV3")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 20, height: 18)
+            Text(atmosphere.shortTitle)
                 .luminaFont(size: 10, weight: .black, design: .rounded)
                 .lineLimit(1)
                 .minimumScaleFactor(0.76)
+                .fixedSize(horizontal: true, vertical: false)
         }
-        .foregroundColor(Color(hex: 0xFFF8DC))
+        .foregroundColor(Color(hex: 0x3B3427))
+        .frame(minWidth: 96)
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .background(atmosphere.tint.opacity(0.58))
+        .background(
+            Image("GardenHUDAtmospherePlaqueV4")
+                .resizable()
+                .scaledToFill()
+                .opacity(0.92)
+        )
         .clipShape(Capsule())
-        .overlay(Capsule().stroke(Color.white.opacity(0.28), lineWidth: 1))
-        .shadow(color: Color(hex: 0x17381F).opacity(0.10), radius: 8, x: 0, y: 4)
+        .shadow(color: Color(hex: 0x17381F).opacity(0.18), radius: 8, x: 0, y: 4)
         .accessibilityLabel("Garden atmosphere, \(atmosphere.title)")
     }
 }
 
 private struct GardenMemoryWhisperBar: View {
     let totalCount: Int
+    let nextMove: GardenNextMove
+    let stages: [GardenRhythmStage]
+    let readyTracePromptCount: Int
     let onOpenBoard: () -> Void
 
-    private var title: String {
-        totalCount == 0 ? "Leave a trace" : "Memory shelf"
+    private var completedStageCount: Int {
+        stages.filter(\.isComplete).count
+    }
+
+    private var stageGoal: Int {
+        max(stages.count, 1)
+    }
+
+    private var routeTitle: String {
+        if totalCount == 0 { return "Leave one trace" }
+        if readyTracePromptCount > 0 { return "Keep \(readyTracePromptCount) change\(readyTracePromptCount == 1 ? "" : "s")" }
+        return nextMove.title
+    }
+
+    private var routeDetail: String {
+        if totalCount == 0 { return "Start with one small action." }
+        if readyTracePromptCount > 0 { return "Open shelf to place them." }
+        return nextMove.detail
+    }
+
+    private var leadingAssetName: String {
+        if readyTracePromptCount > 0 { return "GardenRewardLanternV3" }
+        if nextMove.systemImage == "drop.fill" { return "GardenDewDropTokenV3" }
+        return totalCount == 0 ? "GardenMoodSeedlingV3" : "GardenMemoryStoneV3"
+    }
+
+    private var progressBadgeText: String {
+        readyTracePromptCount > 0 ? "\(readyTracePromptCount)" : "\(completedStageCount)/\(stageGoal)"
+    }
+
+    private var accessibilityProgressText: String {
+        readyTracePromptCount > 0 ? "\(readyTracePromptCount) ready" : "\(completedStageCount) of \(stageGoal)"
     }
 
     var body: some View {
         Button(action: onOpenBoard) {
-            HStack(spacing: 8) {
-                Image(systemName: totalCount == 0 ? "leaf.fill" : "tray.full.fill")
-                    .luminaFont(size: 11, weight: .black)
-                    .foregroundColor(Color(hex: 0x48613A))
-                    .frame(width: 24, height: 24)
-                    .background(Color(hex: 0xF5EAC6).opacity(0.86))
-                    .clipShape(Circle())
+            HStack(spacing: 10) {
+                Image(leadingAssetName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 34, height: 34)
 
-                Text(title)
-                    .luminaFont(size: 10, weight: .black, design: .rounded)
-                    .foregroundColor(Color(hex: 0xF8F0D2))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Care route")
+                        .luminaFont(size: 7.8, weight: .black, design: .rounded)
+                        .foregroundColor(Color(hex: 0x7C693F))
+                        .textCase(.uppercase)
+                        .lineLimit(1)
 
-                if totalCount > 0 {
-                    Text("\(totalCount)")
-                        .luminaFont(size: 10, weight: .black, design: .rounded)
-                        .foregroundColor(Color(hex: 0x2D3C24))
-                        .frame(width: 22, height: 22)
-                        .background(Color(hex: 0xF5EAC6).opacity(0.82))
-                        .clipShape(Circle())
+                    Text(routeTitle)
+                        .luminaFont(size: 11.4, weight: .black, design: .rounded)
+                        .foregroundColor(Color(hex: 0x352F25))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+
+                    Text(routeDetail)
+                        .luminaFont(size: 8.8, weight: .bold)
+                        .foregroundColor(Color(hex: 0x5B513E))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.68)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(Color(hex: 0xFFF8E4).opacity(0.54))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                Text(progressBadgeText)
+                    .luminaFont(size: 10, weight: .black, design: .rounded)
+                    .foregroundColor(Color(hex: 0x2D3C24))
+                    .frame(width: 34, height: 24)
+                    .background(
+                        Image("GardenRitualButtonPlaqueV3")
+                            .resizable()
+                            .scaledToFill()
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.leading, 10)
+            .padding(.trailing, 9)
+            .padding(.vertical, 8)
             .background(
-                Capsule()
-                    .fill(Color(hex: 0x3D4A32).opacity(0.24))
-                    .overlay(Capsule().stroke(Color(hex: 0xF1E4BC).opacity(0.24), lineWidth: 1))
+                Image("GardenQuestRibbonPlaqueV4")
+                    .resizable()
+                    .scaledToFill()
+                    .opacity(0.96)
             )
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color(hex: 0xFFF5D6).opacity(0.42), lineWidth: 1)
+            )
+            .shadow(color: Color(hex: 0x17381F).opacity(0.18), radius: 10, x: 0, y: 5)
         }
         .buttonStyle(GardenPressableButtonStyle(pressedScale: 0.97, pressedOpacity: 0.88))
-        .accessibilityLabel(totalCount == 0 ? "Begin Garden memory" : "Open Garden memory shelf")
+        .accessibilityLabel("Care route, \(routeTitle), \(routeDetail), \(accessibilityProgressText)")
     }
 }
 
@@ -2830,6 +2912,7 @@ private struct GardenFirstVisitGuideOverlay: View {
                             onSkip: onSkip
                         )
                         .padding(.horizontal, 20)
+                        .luminaBesideFold()
                         .padding(.top, max(proxy.safeAreaInsets.top + 72, 96))
 
                         Spacer(minLength: 0)
@@ -2845,6 +2928,7 @@ private struct GardenFirstVisitGuideOverlay: View {
                             onSkip: onSkip
                         )
                         .padding(.horizontal, 20)
+                        .luminaBesideFold()
                         .padding(.bottom, max(proxy.safeAreaInsets.bottom + 104, 118))
                     }
                     .zIndex(2)
@@ -3257,6 +3341,7 @@ private struct GardenToolbelt: View {
 
 private struct GardenWorldScene: View {
     let habits: [Habit]
+    let journalEntries: [JournalEntry]
     let waterDrops: Int
     let selectedTool: GardenTool
     let readyTracePromptCount: Int
@@ -3286,19 +3371,11 @@ private struct GardenWorldScene: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let visibleHabits = Array(habits.prefix(3))
+            let visibleHabits = Array(habits.prefix(min(4, gardenPlotPositions.count)))
             let visibleKeepsakes = Array(keepsakes.prefix(max(0, 3 - visibleHabits.count)))
-            let areaStageCount = areaMilestoneStages.values.reduce(0) { $0 + $1.count }
-            let memoryDepth = habits.count + keepsakes.count + areaStageCount
-            let pathTraceCount = max(visibleHabits.count + visibleKeepsakes.count, min(memoryDepth, gardenPlotPositions.count))
             let resolvedAvatarPosition = resolvedKeeperPosition(avatarPosition, avoiding: visitorInvitation)
 
             ZStack {
-                GardenMemoryPathLayer(traceCount: pathTraceCount)
-                    .opacity(memoryDepth > 3 ? min(0.10 + Double(memoryDepth) * 0.012, 0.22) : 0)
-                    .blendMode(.softLight)
-                    .zIndex(0.05)
-
                 ForEach(unlockedAreas) { unlock in
                     GardenAreaVisualUnlockCluster(
                         area: unlock.area,
@@ -3339,23 +3416,22 @@ private struct GardenWorldScene: View {
 
                 ForEach(Array(visibleHabits.enumerated()), id: \.element.id) { index, habit in
                     let isCompletedToday = completedHabitIDsToday.contains(habit.id)
-                    Button {
+                    let sourceEntry = sourceEntry(for: habit)
+                    GardenTraceNode(
+                        habit: habit,
+                        sourceEntry: sourceEntry,
+                        displayIndex: index,
+                        mapY: gardenPlotPositions[index].y,
+                        tool: selectedTool,
+                        canWater: waterDrops > 0 && habit.plantType != .tree,
+                        isCompletedToday: isCompletedToday,
+                        isWatering: recentlyWateredHabitID == habit.id,
+                        isFocused: focusedHabitID == habit.id
+                    )
+                    .onTapGesture {
                         onPlotTap(habit)
-                    } label: {
-                        GardenTraceNode(
-                            habit: habit,
-                            displayIndex: index,
-                            mapY: gardenPlotPositions[index].y,
-                            tool: selectedTool,
-                            canWater: waterDrops > 0 && habit.plantType != .tree,
-                            isCompletedToday: isCompletedToday,
-                            isWatering: recentlyWateredHabitID == habit.id,
-                            isFocused: focusedHabitID == habit.id
-                        )
                     }
-                    .buttonStyle(GardenPressableButtonStyle(pressedScale: 0.95, pressedOpacity: 0.90))
-                    .accessibilityLabel(habit.title)
-                    .accessibilityHint(selectedTool == .explore ? "Open this garden trace" : "Use selected garden tool")
+                    .accessibilityHidden(true)
                     .position(
                         x: proxy.size.width * gardenPlotPositions[index].x,
                         y: proxy.size.height * gardenPlotPositions[index].y
@@ -3441,6 +3517,28 @@ private struct GardenWorldScene: View {
                     )
                     .zIndex(Double(resolvedAvatarPosition.y) + 0.10)
 
+                ForEach(Array(visibleHabits.enumerated()), id: \.element.id) { index, habit in
+                    let sourceEntry = sourceEntry(for: habit)
+                    Button {
+                        onPlotTap(habit)
+                    } label: {
+                        GardenTraceNameplate(
+                            habit: habit,
+                            sourceEntry: sourceEntry,
+                            displayIndex: index,
+                            isFocused: focusedHabitID == habit.id
+                        )
+                    }
+                    .buttonStyle(GardenPressableButtonStyle(pressedScale: 0.98, pressedOpacity: 0.94))
+                    .accessibilityLabel(traceNameplateAccessibilityLabel(for: habit, sourceEntry: sourceEntry, displayIndex: index))
+                    .accessibilityHint("Open this garden trace")
+                    .scaleEffect(gardenTraceDepthScale(for: gardenPlotPositions[index].y), anchor: .center)
+                    .position(
+                        x: proxy.size.width * gardenPlotPositions[index].x,
+                        y: proxy.size.height * gardenPlotPositions[index].y + gardenTraceNameplateYOffset(for: gardenPlotPositions[index].y)
+                    )
+                    .zIndex(2.0 + Double(index) * 0.001)
+                }
             }
         }
     }
@@ -3463,6 +3561,18 @@ private struct GardenWorldScene: View {
 
     private func keepsakePosition(for index: Int) -> CGPoint {
         return gardenKeepsakePositions[index % gardenKeepsakePositions.count]
+    }
+
+    private func sourceEntry(for habit: Habit) -> JournalEntry? {
+        guard let journalID = habit.sourceJournalEntryID else { return nil }
+        return journalEntries.first { $0.id == journalID }
+    }
+
+    private func traceNameplateAccessibilityLabel(for habit: Habit, sourceEntry: JournalEntry?, displayIndex: Int) -> String {
+        let descriptor = GardenTraceObjectDescriptor.resolve(for: habit, sourceEntry: sourceEntry, displayIndex: displayIndex)
+        let title = habit.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? descriptor.object.title : habit.title
+        let sourceLabel = sourceEntry?.mood.label ?? (descriptor.source == .therapy ? "Therapy plan" : "Garden trace")
+        return "\(title), \(sourceLabel)"
     }
 
     private func sceneDepthScale(for y: CGFloat) -> CGFloat {
@@ -3565,34 +3675,13 @@ private struct GardenForageNode: View {
         let pulse = 0.5 + 0.5 * sin(phase * 1.45)
         let glint = 0.5 + 0.5 * sin(phase * 2.2 + 0.6)
 
-        ZStack {
-            Circle()
-                .fill(Color(hex: 0xFFF4A8).opacity(0.16 + pulse * 0.11))
-                .frame(width: 30 + CGFloat(pulse) * 5, height: 30 + CGFloat(pulse) * 5)
-                .blur(radius: 8)
-
-            Circle()
-                .stroke(Color(hex: 0xFFFBEA).opacity(0.18 + (1 - pulse) * 0.50), lineWidth: 1.3)
-                .frame(width: 19 + CGFloat(pulse) * 10, height: 19 + CGFloat(pulse) * 10)
-
-            ForEach(0..<3, id: \.self) { index in
-                let angle = phase * (0.36 + Double(index) * 0.04) + Double(index) * 2.15
-                Circle()
-                    .fill(Color(hex: 0xFFF8D6).opacity(0.30 + glint * 0.28))
-                    .frame(width: CGFloat(index == 0 ? 3 : 2), height: CGFloat(index == 0 ? 3 : 2))
-                    .offset(
-                        x: CGFloat(cos(angle) * Double(9 + index * 2)),
-                        y: CGFloat(sin(angle) * Double(5 + index))
-                    )
-            }
-
-            Image(systemName: "drop.fill")
-                .luminaFont(size: 11, weight: .black)
-                .foregroundColor(Color(hex: 0x54BFE8))
-                .shadow(color: Color(hex: 0xFFF4A8).opacity(0.82), radius: 5, x: 0, y: 0)
-                .scaleEffect(0.98 + CGFloat(glint) * 0.06)
-                .offset(y: CGFloat(-1.4 * pulse))
-        }
+        Image("GardenDewDropTokenV3")
+            .resizable()
+            .scaledToFit()
+            .frame(width: 34, height: 40)
+            .scaleEffect(0.94 + CGFloat(glint) * 0.08)
+            .offset(y: CGFloat(-2.2 * pulse))
+            .shadow(color: Color(hex: 0xFFF4A8).opacity(0.48 + glint * 0.24), radius: 7, x: 0, y: 0)
         .frame(width: 44, height: 44)
     }
 }
@@ -3893,36 +3982,12 @@ private struct GardenKeepsakeNode: View {
     private func content(phase: TimeInterval) -> some View {
         let breath = 0.5 + 0.5 * sin(phase * 0.82)
         let tinySway = sin(phase * 0.54 + 0.4)
-        let lanternPulse = keepsake.kind == .sunLantern ? breath : 0
         let charmSway = keepsake.kind == .pathCharm ? tinySway * 1.8 : 0
         let archiveLift = keepsake.kind == .seedArchive ? sin(phase * 0.44) * 0.8 : 0
 
         ZStack {
             GardenGroundShadow(width: 48, height: 10, opacity: 0.13, blurRadius: 1.2)
                 .offset(y: 25)
-
-            GardenTraceNest(
-                tint: keepsake.kind.tint,
-                variant: keepsake.kind.rawValue.unicodeScalars.reduce(0) { $0 + Int($1.value) },
-                intensity: 0.50
-            )
-            .offset(y: 15)
-            .scaleEffect(0.58)
-            .blendMode(.multiply)
-
-            Circle()
-                .fill(keepsake.kind.tint.opacity(0.08 + breath * 0.09 + lanternPulse * 0.05))
-                .frame(width: 56 + CGFloat(breath) * 8, height: 56 + CGFloat(breath) * 8)
-                .blur(radius: 10)
-                .offset(y: 2)
-
-            if keepsake.kind == .sunLantern {
-                Circle()
-                    .fill(Color(hex: 0xFFE891).opacity(0.12 + breath * 0.16))
-                    .frame(width: 42 + CGFloat(breath) * 10, height: 42 + CGFloat(breath) * 10)
-                    .blur(radius: 8)
-                    .offset(y: 0)
-            }
 
             Image(keepsake.kind.assetName)
                 .resizable()
@@ -3934,15 +3999,6 @@ private struct GardenKeepsakeNode: View {
                 .rotationEffect(.degrees(charmSway), anchor: .top)
                 .scaleEffect(1.0 + CGFloat(breath) * (keepsake.kind == .sunLantern ? 0.018 : 0.010), anchor: .bottom)
                 .offset(y: CGFloat(-archiveLift))
-
-            if keepsake.kind == .seedArchive {
-                Capsule()
-                    .fill(Color(hex: 0xFFF8D6).opacity(0.28 + breath * 0.22))
-                    .frame(width: 30, height: 3)
-                    .blur(radius: 2)
-                    .rotationEffect(.degrees(-12))
-                    .offset(x: 1, y: -16 + CGFloat(archiveLift))
-            }
         }
         .frame(width: 84, height: 88)
     }
@@ -3978,39 +4034,25 @@ private struct GardenAreaWhisperNode: View {
         let completedPulse = isCompletedToday ? pulse : 0
 
         ZStack {
-            Circle()
-                .fill(Color(hex: 0xFFF8E8).opacity(0.26 + pulse * 0.11))
-                .frame(width: 32 + CGFloat(pulse) * 5, height: 32 + CGFloat(pulse) * 5)
-                .blur(radius: 6)
-
-            Circle()
-                .stroke(unlock.area.tint.opacity(0.18 + completedPulse * 0.20), lineWidth: 1.2)
-                .frame(width: 31 + CGFloat(pulse) * 8, height: 31 + CGFloat(pulse) * 8)
-                .opacity(0.55 - pulse * 0.24)
-
-            Image(systemName: unlock.area.icon)
-                .luminaFont(size: 12, weight: .black)
-                .foregroundColor(isCompletedToday ? Color(hex: 0xFFF8E8) : unlock.area.tint)
-                .frame(width: 28, height: 28)
-                .background(
-                    Circle()
-                        .fill(isCompletedToday ? Color(hex: 0x5FA461).opacity(0.96) : Color(hex: 0xFFFDF4).opacity(0.82))
-                )
-                .overlay(
-                    Circle()
-                        .stroke(Color(hex: 0xFFF8E8).opacity(0.64), lineWidth: 1)
-                )
-                .shadow(color: Color(hex: 0x17381F).opacity(0.13), radius: 4, x: 0, y: 3)
-                .scaleEffect(1.0 + CGFloat(completedPulse) * 0.05)
+            Image(completedStageCount > 0 ? "GardenMemoryStoneV3" : (isCompletedToday ? "GardenRewardLanternV3" : "GardenBreathingWindCharmV3"))
+                .resizable()
+                .scaledToFit()
+                .frame(width: isCompletedToday ? 34 : 32, height: 38)
+                .shadow(color: Color(hex: 0x17381F).opacity(0.14), radius: 4, x: 0, y: 3)
+                .scaleEffect(1.0 + CGFloat(max(pulse, completedPulse)) * 0.05)
 
             if completedStageCount > 0 {
                 Text("\(completedStageCount)")
                     .luminaFont(size: 8, weight: .black, design: .rounded)
-                    .foregroundColor(Color(hex: 0xFFF8E8))
-                    .frame(width: 16, height: 16)
-                    .background(unlock.area.tint)
-                    .clipShape(Circle())
-                    .offset(x: 14, y: -14)
+                    .foregroundColor(Color(hex: 0x4E4034))
+                    .frame(width: 20, height: 16)
+                    .background(
+                        Image("GardenRitualButtonPlaqueV3")
+                            .resizable()
+                            .scaledToFill()
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    .offset(x: 15, y: -15)
             }
         }
         .frame(width: 42, height: 42)
@@ -4117,24 +4159,45 @@ private struct GardenAreaVisualUnlockCluster: View {
 
     var body: some View {
         ZStack {
-            if !unlockedStages.isEmpty {
-                GardenAreaEvolvedGroundPatch(
-                    area: area,
-                    completedStageCount: unlockedStages.count
-                )
-            }
-
-            ForEach(visibleMarks) { mark in
-                GardenAreaStageMark(area: area, stage: mark.stage)
+            ForEach(Array(visibleMarks.enumerated()), id: \.element.id) { index, mark in
+                Image(areaSpriteAsset(for: mark.stage))
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: spriteSize(for: mark.stage).width, height: spriteSize(for: mark.stage).height)
                     .scaleEffect(mark.scale)
                     .offset(
-                        x: CGFloat(mark.localXOffset),
+                        x: CGFloat(mark.localXOffset) + CGFloat(index - 1) * 6,
                         y: CGFloat(mark.localYOffset)
                     )
+                    .shadow(color: Color(hex: 0x17381F).opacity(0.15), radius: 5, x: 0, y: 3)
             }
         }
         .frame(width: 184, height: 146)
         .accessibilityHidden(true)
+    }
+
+    private func areaSpriteAsset(for stage: Int) -> String {
+        switch area {
+        case .pathNook:
+            return stage >= 3 ? "GardenMemoryStoneV3" : "GardenBreathingWindCharmV3"
+        case .lanternGlade:
+            return "GardenRewardLanternV3"
+        case .archiveCorner:
+            return stage >= 2 ? "GardenPaperReflectionSlipV3" : "GardenMemoryStoneV3"
+        }
+    }
+
+    private func spriteSize(for stage: Int) -> CGSize {
+        switch areaSpriteAsset(for: stage) {
+        case "GardenRewardLanternV3":
+            return CGSize(width: 58, height: 72)
+        case "GardenBreathingWindCharmV3":
+            return CGSize(width: 54, height: 76)
+        case "GardenPaperReflectionSlipV3":
+            return CGSize(width: 72, height: 58)
+        default:
+            return CGSize(width: 68, height: 58)
+        }
     }
 }
 
@@ -4483,16 +4546,11 @@ private struct GardenLampMarker: View {
     private func content(phase: TimeInterval) -> some View {
         let glow = 0.5 + 0.5 * sin(phase * 0.86)
 
-        ZStack {
-            Circle()
-                .fill(Color(hex: 0xFFD66B).opacity(0.18 + glow * 0.11))
-                .blur(radius: 12 + CGFloat(glow) * 2)
-                .frame(width: 68 + CGFloat(glow) * 8, height: 68 + CGFloat(glow) * 8)
-            Image("GardenPropLamp")
-                .resizable()
-                .scaledToFit()
-                .shadow(color: Color(hex: 0x2F2B1A).opacity(0.24), radius: 7, x: 0, y: 5)
-        }
+        Image("GardenRewardLanternV3")
+            .resizable()
+            .scaledToFit()
+            .scaleEffect(1 + CGFloat(glow) * 0.014, anchor: .bottom)
+            .shadow(color: Color(hex: 0x2F2B1A).opacity(0.24), radius: 7, x: 0, y: 5)
         .accessibilityHidden(true)
     }
 }
@@ -4525,27 +4583,24 @@ private struct GardenDecorationNode: View {
         let sway = sin(phase * 0.55)
 
         ZStack {
-            Ellipse()
-                .fill(Color.black.opacity(0.13))
-                .frame(width: 34 + CGFloat(breath) * 2, height: 10)
-                .offset(y: 16)
+            GardenGroundShadow(width: 42, height: 10, opacity: 0.12, blurRadius: 1.0)
+                .offset(y: 18)
 
             switch type {
             case .lamp:
-                Circle()
-                    .fill(Color(hex: 0xFFD66B).opacity(0.12 + breath * 0.10))
-                    .frame(width: 54 + CGFloat(breath) * 8, height: 54 + CGFloat(breath) * 8)
-                    .blur(radius: 10)
-                    .offset(y: -4)
-                Image("GardenPropLamp")
+                Image("GardenRewardLanternV3")
                     .resizable()
                     .scaledToFit()
                     .shadow(color: Color(hex: 0x2F2B1A).opacity(0.22), radius: 6, x: 0, y: 4)
                     .scaleEffect(1 + CGFloat(breath) * 0.012, anchor: .bottom)
             case .stones:
-                GardenStoneCluster(phase: phase, allowsMotion: allowsMotion)
+                Image("GardenMemoryStoneV3")
+                    .resizable()
+                    .scaledToFit()
             case .flowers:
-                GardenFlowerCluster(phase: phase, allowsMotion: allowsMotion)
+                Image("GardenMoodCalmBloomV3")
+                    .resizable()
+                    .scaledToFit()
                     .rotationEffect(.degrees(sway * 1.2), anchor: .bottom)
             }
         }
@@ -5156,6 +5211,11 @@ private enum GardenTraceSourceKind {
 }
 
 private enum GardenTraceObjectKind {
+    case moodSeedling
+    case moodCalmBloom
+    case moodAnxiousFern
+    case moodSadLily
+    case moodEnergeticBloom
     case paperPage
     case letter
     case carvedStone
@@ -5164,12 +5224,27 @@ private enum GardenTraceObjectKind {
     case lantern
     case rootCharm
 
-    static func resolve(for habit: Habit, displayIndex: Int) -> GardenTraceObjectKind {
+    static func resolve(for habit: Habit, sourceEntry: JournalEntry? = nil, displayIndex: Int) -> GardenTraceObjectKind {
         let source = GardenTraceSourceKind.resolve(for: habit)
         let seed = habit.id.unicodeScalars.reduce(0) { $0 + Int($1.value) } + displayIndex * 17
 
         switch source {
         case .journal:
+            if let sourceEntry {
+                if habit.plantType == .seed || habit.growth < 38 {
+                    return .moodSeedling
+                }
+                switch sourceEntry.mood {
+                case .happy, .calm, .neutral:
+                    return .moodCalmBloom
+                case .anxious:
+                    return .moodAnxiousFern
+                case .sad:
+                    return .moodSadLily
+                case .energetic:
+                    return .moodEnergeticBloom
+                }
+            }
             if habit.plantType == .tree || displayIndex.isMultiple(of: 3) {
                 return .carvedStone
             }
@@ -5190,6 +5265,11 @@ private enum GardenTraceObjectKind {
 
     var title: String {
         switch self {
+        case .moodSeedling: return "Mood seedling"
+        case .moodCalmBloom: return "Calm bloom"
+        case .moodAnxiousFern: return "Storm fern"
+        case .moodSadLily: return "Moon lily"
+        case .moodEnergeticBloom: return "Ember bloom"
         case .paperPage: return "Paper page"
         case .letter: return "Letter"
         case .carvedStone: return "Carved stone"
@@ -5202,28 +5282,43 @@ private enum GardenTraceObjectKind {
 
     var assetName: String {
         switch self {
-        case .paperPage: return "GardenTracePaperPageV2"
-        case .letter: return "GardenTracePaperPageV2"
-        case .carvedStone: return "GardenTraceMemoryStoneV2"
-        case .quietBowl: return "GardenTraceLeafBowlV2"
-        case .windChime: return "GardenTraceWindCharmV2"
-        case .lantern: return "GardenTraceLanternV2"
-        case .rootCharm: return "GardenTraceWindCharmV2"
+        case .moodSeedling: return "GardenMoodSeedlingV3"
+        case .moodCalmBloom: return "GardenMoodCalmBloomV3"
+        case .moodAnxiousFern: return "GardenMoodAnxiousFernV3"
+        case .moodSadLily: return "GardenMoodSadLilyV3"
+        case .moodEnergeticBloom: return "GardenMoodEnergeticBloomV3"
+        case .paperPage: return "GardenPaperReflectionSlipV3"
+        case .letter: return "GardenPaperReflectionSlipV3"
+        case .carvedStone: return "GardenMemoryStoneV3"
+        case .quietBowl: return "GardenRitualButtonPlaqueV3"
+        case .windChime: return "GardenBreathingWindCharmV3"
+        case .lantern: return "GardenRewardLanternV3"
+        case .rootCharm: return "GardenBreathingWindCharmV3"
         }
     }
 
     var assetSize: CGSize {
         switch self {
-        case .paperPage, .letter: return CGSize(width: 64, height: 66)
-        case .carvedStone: return CGSize(width: 70, height: 66)
-        case .quietBowl: return CGSize(width: 72, height: 54)
-        case .windChime, .rootCharm: return CGSize(width: 58, height: 78)
-        case .lantern: return CGSize(width: 62, height: 76)
+        case .moodSeedling: return CGSize(width: 64, height: 74)
+        case .moodCalmBloom: return CGSize(width: 78, height: 78)
+        case .moodAnxiousFern: return CGSize(width: 78, height: 86)
+        case .moodSadLily: return CGSize(width: 78, height: 86)
+        case .moodEnergeticBloom: return CGSize(width: 78, height: 88)
+        case .paperPage, .letter: return CGSize(width: 72, height: 68)
+        case .carvedStone: return CGSize(width: 74, height: 70)
+        case .quietBowl: return CGSize(width: 76, height: 56)
+        case .windChime, .rootCharm: return CGSize(width: 58, height: 82)
+        case .lantern: return CGSize(width: 62, height: 78)
         }
     }
 
     var icon: String {
         switch self {
+        case .moodSeedling: return "leaf.fill"
+        case .moodCalmBloom: return "sun.max.fill"
+        case .moodAnxiousFern: return "cloud.bolt.rain.fill"
+        case .moodSadLily: return "moon.fill"
+        case .moodEnergeticBloom: return "flame.fill"
         case .paperPage: return "doc.text.fill"
         case .letter: return "envelope.open.fill"
         case .carvedStone: return "seal.fill"
@@ -5236,6 +5331,11 @@ private enum GardenTraceObjectKind {
 
     var meaning: String {
         switch self {
+        case .moodSeedling: return "A new feeling has been placed in the grove before it needs to be understood."
+        case .moodCalmBloom: return "A steadier reflection is visible as something warm and returnable."
+        case .moodAnxiousFern: return "A tense or anxious moment is held without having to disappear."
+        case .moodSadLily: return "A low or tender moment is allowed to have shape and shade."
+        case .moodEnergeticBloom: return "A high-energy moment becomes a bright marker instead of noise."
         case .paperPage: return "A written reflection that wanted a visible place."
         case .letter: return "A thought that may be worth returning to later."
         case .carvedStone: return "A moment that felt understood enough to leave a mark."
@@ -5251,10 +5351,10 @@ private struct GardenTraceObjectDescriptor {
     let source: GardenTraceSourceKind
     let object: GardenTraceObjectKind
 
-    static func resolve(for habit: Habit, displayIndex: Int) -> GardenTraceObjectDescriptor {
+    static func resolve(for habit: Habit, sourceEntry: JournalEntry? = nil, displayIndex: Int) -> GardenTraceObjectDescriptor {
         GardenTraceObjectDescriptor(
             source: GardenTraceSourceKind.resolve(for: habit),
-            object: GardenTraceObjectKind.resolve(for: habit, displayIndex: displayIndex)
+            object: GardenTraceObjectKind.resolve(for: habit, sourceEntry: sourceEntry, displayIndex: displayIndex)
         )
     }
 
@@ -5287,6 +5387,7 @@ private struct GardenTraceObjectDescriptor {
 
 private struct GardenTraceNode: View {
     let habit: Habit
+    let sourceEntry: JournalEntry?
     let displayIndex: Int
     let mapY: CGFloat
     let tool: GardenTool
@@ -5296,7 +5397,7 @@ private struct GardenTraceNode: View {
     let isFocused: Bool
 
     private var descriptor: GardenTraceObjectDescriptor {
-        GardenTraceObjectDescriptor.resolve(for: habit, displayIndex: displayIndex)
+        GardenTraceObjectDescriptor.resolve(for: habit, sourceEntry: sourceEntry, displayIndex: displayIndex)
     }
 
     private var traceTint: Color {
@@ -5304,39 +5405,22 @@ private struct GardenTraceNode: View {
     }
 
     private var depthScale: CGFloat {
-        min(max(0.70 + mapY * 0.48, 0.84), 1.04)
-    }
-
-    private var traceIcon: String {
-        descriptor.object.icon
-    }
-
-    private var nestIntensity: Double {
-        descriptor.source == .therapy ? 0.58 : 0.52
+        gardenTraceDepthScale(for: mapY)
     }
 
     private var groundShadowWidth: CGFloat {
         switch descriptor.object {
         case .quietBowl:
-            return 64
+            return 78
         case .windChime, .rootCharm, .lantern:
-            return 50
+            return 70
         default:
-            return 58
+            return 76
         }
     }
 
     var body: some View {
         ZStack {
-            GardenTraceNest(
-                tint: traceTint,
-                variant: displayIndex,
-                intensity: nestIntensity
-            )
-            .offset(y: 18)
-            .scaleEffect(0.64)
-            .blendMode(.multiply)
-
             GardenGroundShadow(
                 width: groundShadowWidth,
                 height: 12,
@@ -5345,12 +5429,14 @@ private struct GardenTraceNode: View {
             )
             .offset(y: descriptor.source == .therapy ? 25 : 27)
 
+            tracePedestal
+
             traceBase
 
             traceObject
 
             statusBadge
-                .offset(x: 33, y: -32)
+                .offset(x: 48, y: -48)
                 .shadow(color: Color(hex: 0x17381F).opacity(0.14), radius: 4, x: 0, y: 2)
                 .scaleEffect(isFocused ? 1.06 : 1)
                 .animation(.easeInOut(duration: 0.16), value: isFocused)
@@ -5362,18 +5448,30 @@ private struct GardenTraceNode: View {
                     .scaleEffect(0.78)
                     .offset(y: -30)
             }
+
         }
-        .frame(width: 100, height: 98)
-        .contentShape(Circle())
+        .frame(width: 178, height: 206)
+        .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .scaleEffect(depthScale * (isFocused ? 1.06 : 1.0))
         .animation(.easeInOut(duration: 0.18), value: isFocused)
+    }
+
+    @ViewBuilder
+    private var tracePedestal: some View {
+        Image(tracePedestalAssetName)
+            .resizable()
+            .scaledToFit()
+            .frame(width: 108, height: 82)
+            .opacity(descriptor.source == .practice ? 0.84 : 0.92)
+            .offset(y: 34)
+            .shadow(color: Color(hex: 0x17381F).opacity(0.14), radius: 6, x: 0, y: 4)
     }
 
     @ViewBuilder
     private var traceObject: some View {
         GardenTraceAssetNode(
             assetName: descriptor.object.assetName,
-            size: descriptor.object.assetSize,
+            size: traceObjectSize,
             tint: traceTint,
             isRooted: habit.growth >= 72,
             motionSeed: gardenMotionSeed(from: "\(habit.id)-\(displayIndex)-\(descriptor.object.assetName)")
@@ -5383,45 +5481,135 @@ private struct GardenTraceNode: View {
     @ViewBuilder
     private var traceBase: some View {
         if isFocused {
-            Circle()
-                .stroke(Color(hex: 0xFFF1A8).opacity(0.82), lineWidth: 1.8)
-                .frame(width: 68, height: 68)
+            Image("GardenFocusDewRingV4")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 124, height: 124)
+                .opacity(0.90)
+                .offset(y: -2)
         }
     }
 
     @ViewBuilder
     private var statusBadge: some View {
-        if isCompletedToday {
-            Image(systemName: "checkmark.seal.fill")
-                .luminaFont(size: 17, weight: .black)
-                .foregroundColor(Color(hex: 0xFFFDF4))
-                .frame(width: 22, height: 22)
-                .background(Color(hex: 0x5FA461))
-                .clipShape(Circle())
-                .overlay(Circle().stroke(Color(hex: 0xFFF8E8), lineWidth: 1.4))
-        } else if tool == .explore {
-            Image(systemName: traceIcon)
-                .luminaFont(size: 10, weight: .black)
-                .foregroundColor(traceTint)
-                .frame(width: 21, height: 21)
-                .background(Color(hex: 0xFFFDF4).opacity(0.92))
-                .clipShape(Circle())
-                .overlay(Circle().stroke(traceTint.opacity(0.24), lineWidth: 1))
-        } else if tool == .tend {
-            Image(systemName: canWater ? "drop.fill" : "hand.draw.fill")
-                .luminaFont(size: 10, weight: .black)
-                .foregroundColor(canWater ? Color(hex: 0x309FD2) : Color(hex: 0x5FA461))
-                .frame(width: 22, height: 22)
-                .background(Color(hex: 0xFFF8E8).opacity(0.94))
-                .clipShape(Circle())
-        } else if tool == .arrange {
-            Image(systemName: "plus")
-                .luminaFont(size: 10, weight: .black)
-                .foregroundColor(Color(hex: 0x9D642A))
-                .frame(width: 22, height: 22)
-                .background(Color(hex: 0xFFF0C7))
-                .clipShape(Circle())
+        if let assetName = statusBadgeAssetName {
+            Image(assetName)
+                .resizable()
+                .scaledToFit()
+                .frame(width: statusBadgeSize.width, height: statusBadgeSize.height)
+                .shadow(color: Color(hex: 0x17381F).opacity(0.18), radius: 4, x: 0, y: 2)
         }
+    }
+
+    private var statusBadgeAssetName: String? {
+        if isCompletedToday { return "GardenRewardLanternV3" }
+        switch tool {
+        case .explore:
+            switch descriptor.source {
+            case .journal: return "GardenPaperReflectionSlipV3"
+            case .therapy: return "GardenBreathingWindCharmV3"
+            case .practice: return "GardenMoodSeedlingV3"
+            }
+        case .tend:
+            return canWater ? "GardenDewDropTokenV3" : "GardenRitualButtonPlaqueV3"
+        case .arrange:
+            return "GardenRitualButtonPlaqueV3"
+        }
+    }
+
+    private var statusBadgeSize: CGSize {
+        guard let assetName = statusBadgeAssetName else { return CGSize(width: 0, height: 0) }
+        if assetName.contains("Paper") { return CGSize(width: 28, height: 26) }
+        if assetName.contains("WindCharm") { return CGSize(width: 24, height: 28) }
+        if assetName.contains("Lantern") { return CGSize(width: 25, height: 28) }
+        if assetName.contains("Dew") { return CGSize(width: 23, height: 27) }
+        return CGSize(width: 26, height: 22)
+    }
+
+    private var tracePedestalAssetName: String {
+        switch descriptor.source {
+        case .journal:
+            return "GardenJournalEventPedestalV4"
+        case .therapy:
+            return "GardenTherapyEventPedestalV4"
+        case .practice:
+            return "GardenJournalEventPedestalV4"
+        }
+    }
+
+    private var traceObjectSize: CGSize {
+        let base = descriptor.object.assetSize
+        let scale: CGFloat
+        switch descriptor.object {
+        case .moodSeedling:
+            scale = 1.06
+        case .moodCalmBloom, .moodAnxiousFern, .moodSadLily, .moodEnergeticBloom:
+            scale = 1.24
+        case .lantern, .windChime, .rootCharm:
+            scale = 1.16
+        default:
+            scale = 1.10
+        }
+        return CGSize(width: base.width * scale, height: base.height * scale)
+    }
+}
+
+private struct GardenTraceNameplate: View {
+    let habit: Habit
+    let sourceEntry: JournalEntry?
+    let displayIndex: Int
+    let isFocused: Bool
+
+    private var descriptor: GardenTraceObjectDescriptor {
+        GardenTraceObjectDescriptor.resolve(for: habit, sourceEntry: sourceEntry, displayIndex: displayIndex)
+    }
+
+    private var traceTint: Color {
+        descriptor.tint
+    }
+
+    var body: some View {
+        ZStack {
+            Image("GardenQuestRibbonPlaqueV4")
+                .resizable()
+                .scaledToFill()
+                .opacity(isFocused ? 1 : 0.95)
+
+            VStack(spacing: 0) {
+                Text(captionTitle)
+                    .luminaFont(size: 10.8, weight: .black, design: .rounded)
+                    .foregroundColor(Color(hex: 0x3D3428))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.70)
+                    .frame(maxWidth: .infinity, minHeight: 14)
+                if let moodLabel {
+                    Text(moodLabel)
+                        .luminaFont(size: 8.8, weight: .black, design: .rounded)
+                        .foregroundColor(traceTint)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                        .textCase(.uppercase)
+                }
+            }
+            .padding(.horizontal, 11)
+            .padding(.top, moodLabel == nil ? 0 : 2)
+        }
+        .frame(width: 166, height: 52)
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .shadow(color: Color(hex: 0x17381F).opacity(0.16), radius: 4, x: 0, y: 2)
+        .scaleEffect(isFocused ? 1.05 : 1.0)
+        .animation(.easeInOut(duration: 0.18), value: isFocused)
+    }
+
+    private var captionTitle: String {
+        let trimmed = habit.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? descriptor.object.title : trimmed
+    }
+
+    private var moodLabel: String? {
+        guard let sourceEntry else { return descriptor.source == .therapy ? "Therapy plan" : nil }
+        return sourceEntry.mood.label
     }
 }
 
@@ -5438,11 +5626,11 @@ private struct GardenTraceAssetNode: View {
     }
 
     private var hasWarmGlow: Bool {
-        assetName.contains("Lantern") || assetName.contains("WindCharm")
+        assetName.contains("Lantern") || assetName.contains("Energetic") || assetName.contains("CalmBloom")
     }
 
     private var shouldSway: Bool {
-        assetName.contains("WindCharm")
+        assetName.contains("WindCharm") || assetName.contains("Mood")
     }
 
     var body: some View {
@@ -5458,72 +5646,24 @@ private struct GardenTraceAssetNode: View {
     @ViewBuilder
     private func content(phase: TimeInterval) -> some View {
         let slow = 0.5 + 0.5 * sin(phase * 0.74)
-        let medium = 0.5 + 0.5 * sin(phase * 1.08 + 0.7)
         let paperLift = assetName.contains("Paper") ? sin(phase * 0.52) * 0.7 : 0
-        let stoneGlow = assetName.contains("Stone") ? slow : 0
-        let bowlRipple = assetName.contains("Bowl") ? medium : 0
         let swayDegrees = shouldSway ? sin(phase * 0.86) * 2.0 : 0
         let lanternLift = assetName.contains("Lantern") ? sin(phase * 0.62 + 0.4) * 0.8 : 0
 
-        ZStack {
-            Ellipse()
-                .fill(tint.opacity(0.10 + slow * 0.08))
-                .frame(width: size.width * 1.05, height: max(10, size.height * 0.20))
-                .blur(radius: 5)
-                .offset(y: size.height * 0.39)
-
-            if hasWarmGlow {
-                Circle()
-                    .fill(Color(hex: 0xFFE19A).opacity(0.09 + slow * 0.12))
-                    .frame(width: size.width * (1.02 + CGFloat(slow) * 0.10), height: size.width * (1.02 + CGFloat(slow) * 0.10))
-                    .blur(radius: 12)
-                    .offset(y: size.height * 0.02)
-            }
-
-            if assetName.contains("Bowl") {
-                ForEach(0..<2, id: \.self) { index in
-                    Ellipse()
-                        .stroke(Color(hex: 0xCDEFD7).opacity(0.18 + bowlRipple * 0.20), lineWidth: 1)
-                        .frame(
-                            width: size.width * CGFloat(0.44 + Double(index) * 0.18 + bowlRipple * 0.08),
-                            height: size.height * CGFloat(0.16 + Double(index) * 0.05 + bowlRipple * 0.04)
-                        )
-                        .offset(y: size.height * -0.04)
-                }
-            }
-
-            if assetName.contains("Stone"), isRooted {
-                Capsule()
-                    .fill(Color(hex: 0xFFF4B8).opacity(0.13 + stoneGlow * 0.18))
-                    .frame(width: size.width * 0.42, height: 3)
-                    .blur(radius: 1.5)
-                    .rotationEffect(.degrees(-14))
-                    .offset(x: 2, y: -6)
-            }
-
-            Image(assetName)
-                .resizable()
-                .scaledToFit()
-                .frame(width: size.width, height: size.height)
-                .opacity(0.98)
-                .shadow(color: Color(hex: 0x17381F).opacity(0.12), radius: 1.2, x: 0, y: 1)
-                .shadow(color: Color(hex: 0x17381F).opacity(0.12), radius: 7, x: 0, y: 5)
-                .rotationEffect(.degrees(swayDegrees + (assetName.contains("Paper") ? sin(phase * 0.38) * 0.65 : 0)), anchor: shouldSway ? .top : .center)
-                .scaleEffect(1 + CGFloat(slow) * (isRooted ? 0.018 : 0.010), anchor: .bottom)
-                .offset(
-                    x: shouldSway ? CGFloat(cos(phase * 0.68) * 0.7) : 0,
-                    y: CGFloat(-paperLift - lanternLift)
-                )
-
-            if assetName.contains("Lantern") {
-                Circle()
-                    .fill(Color(hex: 0xFFF8D6).opacity(0.18 + medium * 0.18))
-                    .frame(width: 7, height: 7)
-                    .blur(radius: 1.5)
-                    .offset(y: -size.height * 0.10 + CGFloat(lanternLift))
-            }
-        }
-        .accessibilityHidden(true)
+        Image(assetName)
+            .resizable()
+            .scaledToFit()
+            .frame(width: size.width, height: size.height)
+            .opacity(0.98)
+            .shadow(color: Color(hex: 0x17381F).opacity(0.12), radius: 1.2, x: 0, y: 1)
+            .shadow(color: Color(hex: 0x17381F).opacity(hasWarmGlow ? 0.18 : 0.12), radius: hasWarmGlow ? 9 : 7, x: 0, y: 5)
+            .rotationEffect(.degrees(swayDegrees + (assetName.contains("Paper") ? sin(phase * 0.38) * 0.65 : 0)), anchor: shouldSway ? .bottom : .center)
+            .scaleEffect(1 + CGFloat(slow) * (isRooted ? 0.018 : 0.010), anchor: .bottom)
+            .offset(
+                x: shouldSway ? CGFloat(cos(phase * 0.68) * 0.7) : 0,
+                y: CGFloat(-paperLift - lanternLift)
+            )
+            .accessibilityHidden(true)
     }
 }
 
@@ -5853,7 +5993,6 @@ private struct GardenPlotNode: View {
 
 private struct GardenWaterBurst: View {
     @State private var rising = false
-    @State private var rippling = false
 
     private let offsets: [CGSize] = [
         CGSize(width: -24, height: -8),
@@ -5865,16 +6004,11 @@ private struct GardenWaterBurst: View {
 
     var body: some View {
         ZStack {
-            Ellipse()
-                .stroke(Color(hex: 0xBFE9D2).opacity(rippling ? 0 : 0.48), lineWidth: 1.4)
-                .frame(width: rippling ? 64 : 22, height: rippling ? 20 : 7)
-                .offset(y: 9)
-                .animation(.easeOut(duration: 0.58), value: rippling)
-
             ForEach(offsets.indices, id: \.self) { index in
-                Image(systemName: "drop.fill")
-                    .luminaFont(size: CGFloat(9 + index % 3), weight: .black)
-                    .foregroundColor(Color(hex: 0x55BDE6))
+                Image("GardenDewDropTokenV3")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: CGFloat(10 + index % 3 * 2), height: CGFloat(14 + index % 3 * 2))
                     .opacity(rising ? 0 : 0.95)
                     .scaleEffect(rising ? 0.55 : 1)
                     .offset(
@@ -5885,10 +6019,8 @@ private struct GardenWaterBurst: View {
             }
         }
         .onAppear {
-            rippling = false
             rising = false
             DispatchQueue.main.async {
-                rippling = true
                 rising = true
             }
         }
@@ -5901,19 +6033,19 @@ private struct GardenPlantIllustration: View {
 
     private var assetName: String {
         switch type {
-        case .seed: return "GardenPlantSeed"
-        case .sprout: return "GardenPlantSprout"
-        case .flower: return "GardenPlantFlower"
-        case .tree: return "GardenPlantTree"
+        case .seed: return "GardenMoodSeedlingV3"
+        case .sprout: return "GardenMoodCalmBloomV3"
+        case .flower: return "GardenMoodSadLilyV3"
+        case .tree: return "GardenMoodEnergeticBloomV3"
         }
     }
 
     private var imageSize: CGSize {
         switch type {
-        case .seed: return CGSize(width: 68, height: 42)
-        case .sprout: return CGSize(width: 70, height: 54)
-        case .flower: return CGSize(width: 82, height: 90)
-        case .tree: return CGSize(width: 88, height: 108)
+        case .seed: return CGSize(width: 64, height: 74)
+        case .sprout: return CGSize(width: 80, height: 78)
+        case .flower: return CGSize(width: 84, height: 92)
+        case .tree: return CGSize(width: 86, height: 98)
         }
     }
 
@@ -5950,16 +6082,17 @@ private struct GardenPlantIllustration: View {
 private struct EmptyGardenPlot: View {
     var body: some View {
         ZStack {
-            Circle()
-                .fill(Color(hex: 0xFFF8E8).opacity(0.18))
-                .frame(width: 96, height: 96)
-                .overlay(
-                    Circle()
-                        .stroke(Color(hex: 0xFFF8E8).opacity(0.55), style: StrokeStyle(lineWidth: 2, dash: [6]))
-                )
-            Image(systemName: "plus")
-                .luminaFont(size: 16, weight: .black)
-                .foregroundColor(Color(hex: 0xF7F0CD))
+            Image("GardenRitualButtonPlaqueV3")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 90, height: 62)
+                .opacity(0.88)
+
+            Image("GardenMoodSeedlingV3")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 42, height: 48)
+                .offset(y: -12)
         }
         .frame(width: 110, height: 100)
     }
@@ -6957,7 +7090,7 @@ private struct GardenHabitDetailSheet: View {
     }
 
     private var descriptor: GardenTraceObjectDescriptor {
-        GardenTraceObjectDescriptor.resolve(for: habit, displayIndex: displayIndex)
+        GardenTraceObjectDescriptor.resolve(for: habit, sourceEntry: sourceEntry, displayIndex: displayIndex)
     }
 
     private var plantTint: Color {
@@ -7137,9 +7270,12 @@ private struct GardenMemoryPreviewCard: View {
 
     var body: some View {
         ZStack {
-            GardenTraceNest(tint: tint, variant: assetName.unicodeScalars.reduce(0) { $0 + Int($1.value) }, intensity: 0.58)
-                .scaleEffect(0.74)
-                .offset(y: 15)
+            Image("GardenRitualButtonPlaqueV3")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 74, height: 48)
+                .opacity(0.72)
+                .offset(y: 22)
 
             GardenTraceAssetNode(
                 assetName: assetName,
@@ -7151,13 +7287,12 @@ private struct GardenMemoryPreviewCard: View {
         .frame(width: 78, height: 74)
         .padding(7)
         .background(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(Color(hex: 0xFFF2DD).opacity(0.78))
+            Image("GardenBottomShelfPanelV3")
+                .resizable()
+                .scaledToFill()
+                .opacity(0.58)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(tint.opacity(0.18), lineWidth: 1)
-        )
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityHidden(true)
     }
 }
@@ -7437,6 +7572,7 @@ private struct GardenHabitActionButton: View {
 
 private struct GardenMemoryShelfSheet: View {
     let habits: [Habit]
+    let journalEntries: [JournalEntry]
     let waterDrops: Int
     let completedHabitIDsToday: Set<String>
     let prompts: [GardenTracePrompt]
@@ -7506,6 +7642,7 @@ private struct GardenMemoryShelfSheet: View {
 
                 GardenTraceListSection(
                     habits: habits,
+                    journalEntries: journalEntries,
                     completedHabitIDsToday: completedHabitIDsToday,
                     onSelect: onSelect,
                     onComplete: onComplete
@@ -7648,6 +7785,7 @@ private struct GardenMemoryMetricPill: View {
 
 private struct GardenTraceListSection: View {
     let habits: [Habit]
+    let journalEntries: [JournalEntry]
     let completedHabitIDsToday: Set<String>
     let onSelect: (Habit) -> Void
     let onComplete: (Habit) -> Void
@@ -7688,6 +7826,7 @@ private struct GardenTraceListSection: View {
                     ForEach(Array(visibleHabits.enumerated()), id: \.element.id) { index, habit in
                         GardenTraceRow(
                             habit: habit,
+                            sourceEntry: sourceEntry(for: habit),
                             displayIndex: index,
                             isCompletedToday: completedHabitIDsToday.contains(habit.id),
                             onSelect: { onSelect(habit) },
@@ -7705,17 +7844,23 @@ private struct GardenTraceListSection: View {
             }
         }
     }
+
+    private func sourceEntry(for habit: Habit) -> JournalEntry? {
+        guard let journalID = habit.sourceJournalEntryID else { return nil }
+        return journalEntries.first { $0.id == journalID }
+    }
 }
 
 private struct GardenTraceRow: View {
     let habit: Habit
+    let sourceEntry: JournalEntry?
     let displayIndex: Int
     let isCompletedToday: Bool
     let onSelect: () -> Void
     let onComplete: () -> Void
 
     private var descriptor: GardenTraceObjectDescriptor {
-        GardenTraceObjectDescriptor.resolve(for: habit, displayIndex: displayIndex)
+        GardenTraceObjectDescriptor.resolve(for: habit, sourceEntry: sourceEntry, displayIndex: displayIndex)
     }
 
     private var sourceIcon: String {
@@ -7739,9 +7884,12 @@ private struct GardenTraceRow: View {
                 HStack(spacing: 12) {
                     ZStack(alignment: .bottomTrailing) {
                         ZStack {
-                            GardenTraceNest(tint: sourceTint, variant: displayIndex, intensity: 0.46)
-                                .scaleEffect(0.46)
-                                .offset(y: 10)
+                            Image("GardenRitualButtonPlaqueV3")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 54, height: 36)
+                                .opacity(0.72)
+                                .offset(y: 18)
 
                             GardenTraceAssetNode(
                                 assetName: descriptor.object.assetName,
@@ -7754,16 +7902,18 @@ private struct GardenTraceRow: View {
                             )
                         }
                         .frame(width: 56, height: 56)
-                        .background(Color(hex: 0xF3E1B8).opacity(0.84))
+                        .background(
+                            Image("GardenBottomShelfPanelV3")
+                                .resizable()
+                                .scaledToFill()
+                                .opacity(0.62)
+                        )
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
-                        Image(systemName: sourceIcon)
-                            .luminaFont(size: 9, weight: .black)
-                            .foregroundColor(Color(hex: 0xFFF8E8))
-                            .frame(width: 22, height: 22)
-                            .background(sourceTint)
-                            .clipShape(Circle())
-                            .overlay(Circle().stroke(Color(hex: 0xFFF8E8), lineWidth: 1.5))
+                        Image(descriptor.source == .journal ? "GardenPaperReflectionSlipV3" : (descriptor.source == .therapy ? "GardenBreathingWindCharmV3" : "GardenMoodSeedlingV3"))
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 24, height: 24)
                     }
 
                     VStack(alignment: .leading, spacing: 5) {
@@ -8369,20 +8519,21 @@ private struct GardenAreaMemoryDetailCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(memory.area.tint.opacity(0.14))
+                Image("GardenBottomShelfPanelV3")
+                    .resizable()
+                    .scaledToFill()
                     .frame(width: 78, height: 86)
+                    .opacity(0.70)
+                    .clipped()
 
-                GardenAreaEvolvedGroundPatch(
-                    area: memory.area,
-                    completedStageCount: memory.stage
-                )
-                .scaleEffect(0.42)
-
-                GardenAreaStageMark(area: memory.area, stage: memory.stage)
-                    .scaleEffect(0.68)
+                Image(stageAssetName)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: stageAssetSize.width, height: stageAssetSize.height)
+                    .shadow(color: Color(hex: 0x17381F).opacity(0.16), radius: 5, x: 0, y: 3)
             }
             .frame(width: 78, height: 86)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 7) {
@@ -8417,12 +8568,10 @@ private struct GardenAreaMemoryDetailCard: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 7) {
-                    Image(systemName: "map.fill")
-                        .luminaFont(size: 10, weight: .black)
-                        .foregroundColor(Color(hex: 0xFFF8E8))
-                        .frame(width: 24, height: 24)
-                        .background(memory.area.tint)
-                        .clipShape(Circle())
+                    Image(memory.stage >= 2 ? "GardenPaperReflectionSlipV3" : "GardenMemoryStoneV3")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 26, height: 24)
 
                     VStack(alignment: .leading, spacing: 1) {
                         Text(memory.mapChangeTitle)
@@ -8446,6 +8595,30 @@ private struct GardenAreaMemoryDetailCard: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(memory.area.tint.opacity(0.38), lineWidth: 1)
         )
+    }
+
+    private var stageAssetName: String {
+        switch memory.area {
+        case .pathNook:
+            return memory.stage >= 3 ? "GardenMemoryStoneV3" : "GardenBreathingWindCharmV3"
+        case .lanternGlade:
+            return "GardenRewardLanternV3"
+        case .archiveCorner:
+            return memory.stage >= 2 ? "GardenPaperReflectionSlipV3" : "GardenMemoryStoneV3"
+        }
+    }
+
+    private var stageAssetSize: CGSize {
+        switch stageAssetName {
+        case "GardenRewardLanternV3":
+            return CGSize(width: 54, height: 66)
+        case "GardenBreathingWindCharmV3":
+            return CGSize(width: 48, height: 68)
+        case "GardenPaperReflectionSlipV3":
+            return CGSize(width: 64, height: 52)
+        default:
+            return CGSize(width: 60, height: 52)
+        }
     }
 }
 

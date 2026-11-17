@@ -1,13 +1,6 @@
 import SwiftUI
 import LocalAuthentication
 import AuthenticationServices
-import CryptoKit
-import Security
-
-private enum LumiaLegalLinks {
-    static let privacyPolicy = URL(string: "https://lumia-cd3d2.web.app/privacy.html")!
-    static let termsOfUse = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
-}
 
 private enum ProfileAuthMode: String, CaseIterable, Identifiable {
     case signIn
@@ -34,38 +27,6 @@ private enum ProfileCredentialMethod: String, CaseIterable, Identifiable {
         case .email: return "Email"
         case .phone: return "Phone"
         }
-    }
-}
-
-private enum AppleSignInNonce {
-    private static let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
-
-    static func random(length: Int = 32) throws -> String {
-        precondition(length > 0)
-        var result = ""
-        result.reserveCapacity(length)
-
-        while result.count < length {
-            var randomByte: UInt8 = 0
-            let status = SecRandomCopyBytes(kSecRandomDefault, 1, &randomByte)
-            guard status == errSecSuccess else {
-                throw NSError(
-                    domain: "LuminaAppleSignIn",
-                    code: Int(status),
-                    userInfo: [NSLocalizedDescriptionKey: "Apple sign-in could not start securely. Try again."]
-                )
-            }
-            if randomByte < charset.count {
-                result.append(charset[Int(randomByte)])
-            }
-        }
-
-        return result
-    }
-
-    static func sha256(_ input: String) -> String {
-        let digest = SHA256.hash(data: Data(input.utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -157,7 +118,6 @@ struct ProfileView: View {
     @State private var authConfirmPassword = ""
     @State private var authErrorMessage: String?
     @State private var isAuthSubmitting = false
-    @State private var currentAppleNonce: String?
     @State private var selectedMembershipPlan = "yearly"
     @State private var membershipActionError: String?
     @State private var accountDeletionErrorMessage: String?
@@ -278,11 +238,17 @@ struct ProfileView: View {
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
-                    heroSection
-                    quietOverview
-                    settingsSection
-                    dangerZone
-                    appFooter
+                    // Unfolded iPhone Duo: who you are and your overview on the
+                    // left screen, settings and data on the right.
+                    LuminaFoldColumns(spacing: 0) { _ in
+                        heroSection
+                        quietOverview
+                    } trailing: { isSplit in
+                        settingsSection
+                            .padding(.top, isSplit ? 32 : 0)
+                        dangerZone
+                        appFooter
+                    }
                     Spacer(minLength: 80)
                 }
             }
@@ -301,14 +267,14 @@ struct ProfileView: View {
             }
         }
         .preferredColorScheme(LuminaAppearanceMode.normalized(appearanceModeRawValue).colorScheme)
-        .sheet(isPresented: $showNameEdit)  { nameSheet }
-        .sheet(isPresented: $showBioEdit)   { bioSheet }
-        .sheet(isPresented: $showIdentityEdit) { identitySheet }
-        .sheet(isPresented: $showAIConnection) { aiConnectionSheet }
-        .sheet(isPresented: $showGoalSheet) { goalsSheet }
-        .sheet(isPresented: $showAccountSheet) { accountSheet }
-        .sheet(isPresented: $showMembershipSheet) { membershipSheet }
-        .sheet(isPresented: $showAIDataDisclosure) { aiDataDisclosureSheet }
+        .sheet(isPresented: $showNameEdit)  { nameSheet.luminaFoldSafeSheet() }
+        .sheet(isPresented: $showBioEdit)   { bioSheet.luminaFoldSafeSheet() }
+        .sheet(isPresented: $showIdentityEdit) { identitySheet.luminaFoldSafeSheet() }
+        .sheet(isPresented: $showAIConnection) { aiConnectionSheet.luminaFoldSafeSheet() }
+        .sheet(isPresented: $showGoalSheet) { goalsSheet.luminaFoldSafeSheet() }
+        .sheet(isPresented: $showAccountSheet) { accountSheet.luminaFoldSafeSheet() }
+        .sheet(isPresented: $showMembershipSheet) { membershipSheet.luminaFoldSafeSheet() }
+        .sheet(isPresented: $showAIDataDisclosure) { aiDataDisclosureSheet.luminaFoldSafeSheet() }
         .sheet(isPresented: $showShareSheet) { ShareSheet(items: [exportText]) }
         .alert("Reset All Data?", isPresented: $showClearConfirm) {
             Button("Delete Everything", role: .destructive) {
@@ -1166,6 +1132,8 @@ struct ProfileView: View {
 
                     Button(appState.isSignedIn ? "Manage" : "Sign In", action: onAccount)
                         .luminaFont(size: 12, weight: .bold)
+                        .lineLimit(1)
+                        .fixedSize()
                         .foregroundColor(.organicPrimary)
                         .padding(.horizontal, 14)
                         .frame(height: 34)
@@ -1264,6 +1232,8 @@ struct ProfileView: View {
                         .luminaFont(size: 9, weight: .black)
                     Text(title)
                         .luminaFont(size: 10, weight: .black)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
                 .foregroundColor(.organicPrimary)
                 .padding(.horizontal, 9)
@@ -1878,6 +1848,7 @@ struct ProfileView: View {
             ?? plans.first
         let currentProductID = appState.subscriptionState.productID
         let selectedPlanIsCurrent = selectedPlan.map { isCurrentMembershipPlan($0, currentProductID: currentProductID) } ?? false
+        let selectedPlanIsPurchasable = selectedPlan?.isPurchasable == true
 
         return ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 20) {
@@ -1966,12 +1937,16 @@ struct ProfileView: View {
                 VStack(spacing: 10) {
                     Button {
                         guard let selectedPlan else { return }
+                        guard selectedPlan.isPurchasable else {
+                            membershipActionError = "Lumia Plus is still syncing with the App Store. Please try again shortly."
+                            return
+                        }
                         membershipActionError = nil
                         Task { @MainActor in
                             do {
                                 try await appState.purchaseSubscriptionPlan(selectedPlan.id)
                             } catch {
-                                membershipActionError = error.localizedDescription
+                                membershipActionError = RevenueCatSubscriptionService.userFacingErrorMessage(from: error)
                             }
                         }
                     } label: {
@@ -1984,11 +1959,11 @@ struct ProfileView: View {
                         .foregroundColor(.organicPrimaryFg)
                         .frame(maxWidth: .infinity)
                         .frame(height: 54)
-                        .background(selectedPlanIsCurrent ? Color(hex: 0x5D7052) : Color.organicPrimary)
+                        .background(selectedPlanIsCurrent || !selectedPlanIsPurchasable ? Color.organicMutedFg.opacity(0.35) : Color.organicPrimary)
                         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                     }
                     .buttonStyle(.plain)
-                    .disabled(selectedPlanIsCurrent || appState.isMembershipLoading || selectedPlan == nil)
+                    .disabled(selectedPlanIsCurrent || appState.isMembershipLoading || selectedPlan == nil || !selectedPlanIsPurchasable)
 
                     Button {
                         membershipActionError = nil
@@ -1996,7 +1971,7 @@ struct ProfileView: View {
                             do {
                                 try await appState.restoreRevenueCatPurchases()
                             } catch {
-                                membershipActionError = error.localizedDescription
+                                membershipActionError = RevenueCatSubscriptionService.userFacingErrorMessage(from: error)
                             }
                         }
                     } label: {
@@ -2009,7 +1984,9 @@ struct ProfileView: View {
                     .buttonStyle(.plain)
                     .disabled(appState.isMembershipLoading)
 
-                    if let message = membershipActionError ?? appState.membershipErrorMessage {
+                    if let message = membershipActionError
+                        ?? appState.membershipErrorMessage
+                        ?? (selectedPlanIsPurchasable ? nil : "Lumia Plus is waiting for App Store review availability.") {
                         Text(message)
                             .luminaFont(size: 11, weight: .semibold)
                             .foregroundColor(Color(hex: 0xB94A5C))
@@ -2032,7 +2009,7 @@ struct ProfileView: View {
 
                         HStack(spacing: 12) {
                             Button("Privacy Policy") {
-                                openURL(LumiaLegalLinks.privacyPolicy)
+                                openURL(LumiaLegalURL.privacyPolicy)
                             }
                             .luminaFont(size: 12, weight: .bold)
                             .foregroundColor(.organicPrimary)
@@ -2042,7 +2019,7 @@ struct ProfileView: View {
                                 .foregroundColor(.organicMutedFg)
 
                             Button("Terms of Use") {
-                                openURL(LumiaLegalLinks.termsOfUse)
+                                openURL(LumiaLegalURL.termsOfUse)
                             }
                             .luminaFont(size: 12, weight: .bold)
                             .foregroundColor(.organicPrimary)
@@ -2084,6 +2061,9 @@ struct ProfileView: View {
         if appState.hasPremiumAccess && plan.isRecommended {
             return "Upgrade from Monthly to Yearly through Apple"
         }
+        if !plan.isPurchasable {
+            return "Waiting for App Store availability."
+        }
         return plan.detail
     }
 
@@ -2091,6 +2071,9 @@ struct ProfileView: View {
         guard let plan else { return "Plans unavailable" }
         if isCurrentPlan {
             return "Current plan"
+        }
+        if !plan.isPurchasable {
+            return "Lumia Plus unavailable"
         }
         if appState.hasPremiumAccess {
             return plan.isRecommended ? "Upgrade to \(plan.title)" : "Switch to \(plan.title)"
@@ -2646,6 +2629,7 @@ struct ProfileView: View {
                 }
                 resetAuthFormAfterSuccess()
             } catch {
+                luminaLogAuthenticationError(error, context: "profile.credentials")
                 authErrorMessage = userFacingAuthError(error)
             }
             isAuthSubmitting = false
@@ -2655,12 +2639,10 @@ struct ProfileView: View {
     func prepareAppleAuthorizationRequest(_ request: ASAuthorizationAppleIDRequest) {
         authErrorMessage = nil
         do {
-            let nonce = try AppleSignInNonce.random()
-            currentAppleNonce = nonce
-            request.requestedScopes = [.fullName, .email]
-            request.nonce = AppleSignInNonce.sha256(nonce)
+            try LuminaAppleSignInCoordinator.prepare(request)
         } catch {
-            currentAppleNonce = nil
+            LuminaAppleSignInCoordinator.cancelPendingNonces()
+            luminaLogAuthenticationError(error, context: "profile.apple_prepare")
             authErrorMessage = userFacingAuthError(error)
         }
     }
@@ -2673,14 +2655,18 @@ struct ProfileView: View {
                 authErrorMessage = "Apple authorization did not return a usable credential."
                 return
             }
-            guard let rawNonce = currentAppleNonce else {
+            guard let rawNonce = LuminaAppleSignInCoordinator.consumeNonce(from: credential) else {
+                luminaLogAuthenticationError(
+                    LuminaAuthError.providerUnavailable("Missing Apple sign-in nonce for profile sheet."),
+                    context: "profile.apple_missing_nonce"
+                )
                 authErrorMessage = "Apple sign-in could not complete securely. Please try again."
                 return
             }
             guard let tokenData = credential.identityToken,
                   let idToken = String(data: tokenData, encoding: .utf8) else {
                 authErrorMessage = "Apple sign-in did not return an identity token."
-                currentAppleNonce = nil
+                LuminaAppleSignInCoordinator.cancelPendingNonces()
                 return
             }
 
@@ -2696,18 +2682,20 @@ struct ProfileView: View {
                     )
                     resetAuthFormAfterSuccess()
                 } catch {
+                    luminaLogAuthenticationError(error, context: "profile.apple")
                     authErrorMessage = userFacingAuthError(error)
                 }
-                currentAppleNonce = nil
+                LuminaAppleSignInCoordinator.cancelPendingNonces()
                 isAuthSubmitting = false
             }
         case .failure(let error):
-            currentAppleNonce = nil
+            LuminaAppleSignInCoordinator.cancelPendingNonces()
             if let authorizationError = error as? ASAuthorizationError,
                authorizationError.code == .canceled {
                 authErrorMessage = nil
                 return
             }
+            luminaLogAuthenticationError(error, context: "profile.apple_authorization")
             authErrorMessage = userFacingAuthError(error)
         }
     }
@@ -2721,6 +2709,7 @@ struct ProfileView: View {
                 try await appState.signInWithGoogle()
                 resetAuthFormAfterSuccess()
             } catch {
+                luminaLogAuthenticationError(error, context: "profile.google")
                 authErrorMessage = userFacingAuthError(error)
             }
             isAuthSubmitting = false
@@ -2998,7 +2987,7 @@ struct ProfileView: View {
             )
 
             Button("Open Privacy Policy") {
-                openURL(LumiaLegalLinks.privacyPolicy)
+                openURL(LumiaLegalURL.privacyPolicy)
             }
             .luminaFont(size: 14, weight: .bold)
             .foregroundColor(.organicPrimary)
@@ -3094,26 +3083,7 @@ struct ProfileView: View {
     }
 
     private func userFacingAuthError(_ error: Error) -> String {
-        if let authError = error as? LuminaAuthError {
-            return authError.localizedDescription
-        }
-
-        let message = error.localizedDescription
-        if message.localizedCaseInsensitiveContains("network") ||
-            message.localizedCaseInsensitiveContains("timed out") ||
-            message.localizedCaseInsensitiveContains("offline") {
-            return "The connection was interrupted. Check your network and try again."
-        }
-        if message.localizedCaseInsensitiveContains("password") {
-            return "The email or password does not look right."
-        }
-        if message.localizedCaseInsensitiveContains("email") {
-            return "Check the email address and try again."
-        }
-        if message.localizedCaseInsensitiveContains("cancel") {
-            return "Sign in was cancelled."
-        }
-        return "Sign in could not be completed. Please try again."
+        luminaUserFacingAuthError(error, context: authMode == .register ? .registration : .signIn)
     }
 
     var goalsSheet: some View {

@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import FirebaseAILogic
 import CoreImage
 import NaturalLanguage
@@ -302,7 +302,7 @@ final class SpeechInputController: ObservableObject {
     }
 
     private static func languageCode(from identifier: String) -> String {
-        Locale(identifier: identifier.replacingOccurrences(of: "-", with: "_")).languageCode
+        Locale(identifier: identifier.replacingOccurrences(of: "-", with: "_")).language.languageCode?.identifier
             ?? identifier.split(separator: "-").first.map(String.init)
             ?? identifier
     }
@@ -330,10 +330,7 @@ struct AudioPipelineError: Error, Sendable, CustomNSError {
 
 extension AVAudioSession.CategoryOptions {
     static var luminaAllowBluetoothHFP: AVAudioSession.CategoryOptions {
-        if #available(iOS 26.0, *) {
-            return .allowBluetoothHFP
-        }
-        return .allowBluetooth
+        .allowBluetoothHFP
     }
 }
 
@@ -653,6 +650,7 @@ actor LiveAudioController {
 
 struct FullChatView: View {
     @EnvironmentObject var appState: AppState
+    @AppStorage(GeminiService.aiDataSharingConsentKey) private var hasAIDataSharingConsent = false
     @StateObject private var speechInput = SpeechInputController()
     @State private var activeTherapist: Therapist?
     @State private var messages: [ChatMessage] = []
@@ -669,6 +667,21 @@ struct FullChatView: View {
     @State private var activeUsesJournalContext = false
     @State private var activeUsesGuideMemory = false
     @State private var speechInputRequestID = 0
+    @State private var pendingAIConsentAction: TherapyAIConsentAction?
+
+    private enum TherapyAIConsentAction: Identifiable {
+        case sendMessage(String)
+        case startCall(TherapyCallKind)
+
+        var id: String {
+            switch self {
+            case .sendMessage(let text):
+                return "send-\(text.hashValue)"
+            case .startCall(let kind):
+                return "call-\(kind.rawValue)"
+            }
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -729,6 +742,7 @@ struct FullChatView: View {
                     )
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
+                    .luminaFoldSafeSheet()
                 }
                 .fullScreenCover(item: $activeCall) { callKind in
                     TherapyCallView(
@@ -782,6 +796,11 @@ struct FullChatView: View {
         }
         .onChange(of: appState.isNetworkAvailable) { isAvailable in
             handleNetworkChange(isAvailable)
+        }
+        .sheet(item: $pendingAIConsentAction) { action in
+            LumiaAIDataSharingConsentSheet {
+                continueAfterAIConsent(action)
+            }
         }
         .alert(quotaNoticeTitle, isPresented: Binding(
             get: { quotaNotice != nil },
@@ -855,7 +874,25 @@ struct FullChatView: View {
             quotaNotice = "Your free voice preview is used for today. Text chat is still available, and Plus keeps longer voice sessions available."
             return
         }
+        guard hasAIDataSharingConsent else {
+            pendingAIConsentAction = .startCall(kind)
+            return
+        }
         activeCall = kind
+    }
+
+    private func continueAfterAIConsent(_ action: TherapyAIConsentAction) {
+        GeminiService.grantAIDataSharingConsent()
+        hasAIDataSharingConsent = true
+        pendingAIConsentAction = nil
+        DispatchQueue.main.async {
+            switch action {
+            case .sendMessage(let text):
+                send(text)
+            case .startCall(let kind):
+                startCallIfAllowed(kind)
+            }
+        }
     }
 
     private func recordLiveCallUsage(_ seconds: Int) {
@@ -1072,14 +1109,19 @@ struct FullChatView: View {
         }
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        let preflightTurn = ConversationEngine().prepareTurn(
+            userText: text,
+            currentState: conversationState
+        )
+        guard !preflightTurn.shouldUseAI || hasAIDataSharingConsent else {
+            pendingAIConsentAction = .sendMessage(text)
+            return
+        }
 
         messages.append(ChatMessage(id: UUID().uuidString, role: .user, text: text))
 
         let stateBeforeTurn = conversationState
-        let turnPreparation = ConversationEngine().prepareTurn(
-            userText: text,
-            currentState: conversationState
-        )
+        let turnPreparation = preflightTurn
         riskLevel = turnPreparation.safetyAssessment.riskLevel
         conversationState = turnPreparation.nextState
         let contextBrief = turnPreparation.shouldUseAI
@@ -1361,7 +1403,7 @@ final class TherapyCallSessionController: NSObject, ObservableObject {
             try audioSession.setCategory(
                 .playAndRecord,
                 mode: .voiceChat,
-                options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP]
+                options: [.defaultToSpeaker, .luminaAllowBluetoothHFP, .allowBluetoothA2DP]
             )
             try audioSession.setActive(true)
             try audioSession.overrideOutputAudioPort(.speaker)
@@ -1630,6 +1672,16 @@ final class TherapyLiveCallController: ObservableObject {
         toneFeedback.startDialTone()
 
         Task {
+            guard GeminiService.hasAIDataSharingConsent else {
+                await MainActor.run {
+                    self.markFailed(
+                        GeminiServiceError.aiDataSharingConsentRequired.localizedDescription,
+                        output: GeminiServiceError.aiDataSharingConsentRequired.localizedDescription
+                    )
+                }
+                return
+            }
+
             guard await requestRecordPermission() else {
                 await MainActor.run {
                     self.markFailed(
@@ -1975,58 +2027,87 @@ struct SelectionView: View {
         ZStack {
             Color.organicBackground.ignoresSafeArea()
 
-            if let selectedTherapist {
-                TherapistDetailSelectionView(
-                    therapist: selectedTherapist,
-                    sessionCount: sessionCount(for: selectedTherapist),
-                    latestSession: latestSession(for: selectedTherapist),
-                    onBack: {
-                        withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.88)) {
-                            self.selectedTherapist = nil
+            LuminaFoldReader { crease in
+                // Unfolded: guides on the left screen, the chosen guide on the right.
+                // Folded: one at a time. Only the layout changes, so folding keeps
+                // the list's scroll position and the chosen guide.
+                let isSplit = crease != nil
+                let showsList = isSplit || selectedTherapist == nil
+                let layout = isSplit ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(ZStackLayout())
+                layout {
+                    guideList
+                        .frame(width: crease?.minX)
+                        .opacity(showsList ? 1 : 0)
+                        .allowsHitTesting(showsList)
+                        .accessibilityHidden(!showsList)
+                    Color.clear
+                        .frame(width: crease?.width ?? 0, height: 0)
+                        .accessibilityHidden(true)
+                    Group {
+                        if let selectedTherapist {
+                            detail(for: selectedTherapist)
+                                .id(selectedTherapist.id)
+                                .transition(isSplit ? .opacity : .move(edge: .trailing).combined(with: .opacity))
+                        } else if isSplit {
+                            TherapyGuidePlaceholder()
                         }
-                    },
-                    onStart: {
-                        onOpen(selectedTherapist)
-                    },
-                    onContinue: { session in
-                        onOpenSession(session)
                     }
-                )
-                .transition(.move(edge: .trailing).combined(with: .opacity))
-            } else {
-                ScrollViewReader { proxy in
-                    ScrollView(showsIndicators: false) {
-                        LazyVStack(spacing: 16) {
-                            TherapySelectionHeader()
-                            TherapySafetyBoundaryCard()
-                            TherapistGuideSection(
-                                sessions: sessions,
-                                onSelect: { therapist in
-                                    withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.86)) {
-                                        selectedTherapist = therapist
-                                    }
-                                }
-                            )
-                            TherapyHistoryGroupsSection(
-                                groups: historyGroups,
-                                onOpenSession: onOpenSession,
-                                onArchiveSession: onArchiveSession,
-                                onDeleteSession: onDeleteSession,
-                                onCollapseGroup: { groupID in
-                                    DispatchQueue.main.async {
-                                        withAnimation(.easeOut(duration: 0.18)) {
-                                            proxy.scrollTo(TherapyHistoryScrollAnchor.group(groupID), anchor: .top)
-                                        }
-                                    }
-                                }
-                            )
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 14)
-                        .padding(.bottom, 36)
-                    }
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
+            }
+        }
+    }
+
+    private func detail(for therapist: Therapist) -> some View {
+        TherapistDetailSelectionView(
+            therapist: therapist,
+            sessionCount: sessionCount(for: therapist),
+            latestSession: latestSession(for: therapist),
+            onBack: {
+                withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.88)) {
+                    self.selectedTherapist = nil
+                }
+            },
+            onStart: {
+                onOpen(therapist)
+            },
+            onContinue: { session in
+                onOpenSession(session)
+            }
+        )
+    }
+
+    private var guideList: some View {
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 16) {
+                    TherapySelectionHeader()
+                    TherapySafetyBoundaryCard()
+                    TherapistGuideSection(
+                        sessions: sessions,
+                        onSelect: { therapist in
+                            withAnimation(.interactiveSpring(response: 0.34, dampingFraction: 0.86)) {
+                                selectedTherapist = therapist
+                            }
+                        }
+                    )
+                    TherapyHistoryGroupsSection(
+                        groups: historyGroups,
+                        onOpenSession: onOpenSession,
+                        onArchiveSession: onArchiveSession,
+                        onDeleteSession: onDeleteSession,
+                        onCollapseGroup: { groupID in
+                            DispatchQueue.main.async {
+                                withAnimation(.easeOut(duration: 0.18)) {
+                                    proxy.scrollTo(TherapyHistoryScrollAnchor.group(groupID), anchor: .top)
+                                }
+                            }
+                        }
+                    )
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 36)
             }
         }
     }
@@ -2052,6 +2133,26 @@ struct SelectionView: View {
             }
             .sorted { $0.lastUpdated > $1.lastUpdated }
             .first
+    }
+}
+
+/// Right screen of the unfolded Therapy tab before a guide is chosen.
+private struct TherapyGuidePlaceholder: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "bubble.left.and.text.bubble.right")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(Color.organicPrimary)
+            Text("Choose a guide")
+                .font(.system(.title3, design: .serif).weight(.semibold))
+            Text("Their approach and your past sessions with them will show here.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 280)
+        }
+        .padding(24)
+        .accessibilityElement(children: .combine)
     }
 }
 
