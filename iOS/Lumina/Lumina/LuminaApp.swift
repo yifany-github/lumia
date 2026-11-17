@@ -287,12 +287,17 @@ private struct RegistrationGateView: View {
                 .ignoresSafeArea()
 
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 22) {
-                        header
-                        formPanel
+                    // Unfolded iPhone Duo centres this sheet on the fold: the
+                    // introduction on the left screen, the form on the right.
+                    LuminaFoldReader { crease in
+                        LuminaFoldColumns(spacing: 22) { _ in
+                            header
+                        } trailing: { _ in
+                            formPanel
+                        }
+                        .frame(maxWidth: crease == nil ? 520 : .infinity)
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: 520)
-                    .frame(maxWidth: .infinity)
                     .padding(.horizontal, 24)
                     .padding(.top, max(proxy.safeAreaInsets.top + 22, 46))
                     .padding(.bottom, max(proxy.safeAreaInsets.bottom + 28, 42))
@@ -976,19 +981,39 @@ struct WelcomeGuideView: View {
                 topBar
 
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 22) {
+                    // Unfolded iPhone Duo: what Lumia is on the left screen,
+                    // where to start on the right, nothing across the fold.
+                    LuminaFoldColumns(spacing: 22) { _ in
                         welcomeHeader
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         WelcomeGuideEssentialsCard()
                         WelcomeGuidePlanCard(hasPremiumAccess: appState.hasPremiumAccess)
+                    } trailing: { isSplit in
                         WelcomeGuideStartPicker(selectedStart: $selectedStart)
                         welcomeBoundaryNote
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        // Unfolded, the start button follows the picker in the
+                        // right column, leaving the left column its full height.
+                        if isSplit {
+                            footer(inColumn: true)
+                        }
                     }
                     .padding(.horizontal, 22)
                     .padding(.top, 20)
                     .padding(.bottom, 18)
                 }
 
-                footer
+                LuminaFoldReader { crease in
+                    VStack(spacing: 0) {
+                        // Keeps the reader on screen while the footer is in the
+                        // right column, so it can tell when the display folds.
+                        Color.clear.frame(height: 0)
+                        if crease == nil {
+                            footer(inColumn: false)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
             }
         }
     }
@@ -1061,7 +1086,7 @@ struct WelcomeGuideView: View {
         }
     }
 
-    private var footer: some View {
+    private func footer(inColumn: Bool) -> some View {
         VStack(spacing: 12) {
             Button {
                 startSelectedPath()
@@ -1086,9 +1111,9 @@ struct WelcomeGuideView: View {
             .luminaFont(size: 13, weight: .semibold)
             .foregroundColor(.organicMutedFg)
         }
-        .padding(.horizontal, 22)
+        .padding(.horizontal, inColumn ? 0 : 22)
         .padding(.top, 10)
-        .padding(.bottom, 24)
+        .padding(.bottom, inColumn ? 0 : 24)
     }
 
     private func startSelectedPath() {

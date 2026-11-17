@@ -590,6 +590,7 @@ struct GardenTabView: View {
                 )
                 .presentationDetents([.height(500)])
                 .presentationDragIndicator(.visible)
+                .luminaFoldSafeSheet()
             }
         }
         .sheet(isPresented: $showingMemoryShelf) {
@@ -640,6 +641,7 @@ struct GardenTabView: View {
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
+            .luminaFoldSafeSheet()
         }
         .sheet(isPresented: showingVisitorInvitationDetail) {
             if let invitation = selectedVisitorInvitation {
@@ -676,6 +678,7 @@ struct GardenTabView: View {
                 )
                 .presentationDetents([.height(560), .large])
                 .presentationDragIndicator(.visible)
+                .luminaFoldSafeSheet()
             }
         }
         .sheet(isPresented: showingAreaDetail) {
@@ -705,6 +708,7 @@ struct GardenTabView: View {
                 )
                 .presentationDetents([.height(650), .large])
                 .presentationDragIndicator(.visible)
+                .luminaFoldSafeSheet()
             }
         }
     }
@@ -2830,6 +2834,7 @@ private struct GardenFirstVisitGuideOverlay: View {
                             onSkip: onSkip
                         )
                         .padding(.horizontal, 20)
+                        .luminaBesideFold()
                         .padding(.top, max(proxy.safeAreaInsets.top + 72, 96))
 
                         Spacer(minLength: 0)
@@ -2845,6 +2850,7 @@ private struct GardenFirstVisitGuideOverlay: View {
                             onSkip: onSkip
                         )
                         .padding(.horizontal, 20)
+                        .luminaBesideFold()
                         .padding(.bottom, max(proxy.safeAreaInsets.bottom + 104, 118))
                     }
                     .zIndex(2)

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import Charts
 
 // MARK: - Dashboard
@@ -74,7 +75,9 @@ struct DashboardView: View {
             DashboardBackground()
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 16) {
+                // Unfolded iPhone Duo: two columns, one per screen, so no card
+                // runs across the fold. Elsewhere this is the usual single column.
+                LuminaFoldColumns(spacing: 16) { _ in
                     DashboardHeroView(
                         userName: appState.userName,
                         avatarID: appState.profileAvatarID,
@@ -118,6 +121,8 @@ struct DashboardView: View {
                         }
                     )
 
+                    HomeRecommendationCard(recommendation: makeRecommendation())
+                } trailing: { _ in
                     HomeStillOpenCard(
                         entries: recentEntries,
                         latestSession: latestSession,
@@ -140,7 +145,6 @@ struct DashboardView: View {
                         }
                     )
 
-                    HomeRecommendationCard(recommendation: makeRecommendation())
 
                     HomeMembershipStatusCard(
                         hasPremiumAccess: appState.hasPremiumAccess,
@@ -158,9 +162,11 @@ struct DashboardView: View {
         .sheet(item: $journalEditorRoute) { route in
             JournalEditorView(editingEntry: route.editingEntry)
                 .id(route.id)
+                .luminaFoldSafeSheet()
         }
         .sheet(isPresented: $showingProfile) {
             ProfileView()
+                .luminaFoldSafeSheet()
         }
         .onAppear {
             syncCheckInState()
@@ -2139,22 +2145,33 @@ struct JournalRootView: View {
             JournalRootBackdrop().ignoresSafeArea()
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 16) {
+                // Unfolded: the timeline on the left screen and patterns on the
+                // right, both visible at once instead of behind a picker.
+                LuminaFoldColumns(spacing: 16) { isSplit in
                     JournalHeaderView(
                         onNewReflection: {
                             journalEditorRoute = .new()
                         }
                     )
 
-                    JournalSectionPicker(selectedSection: $selectedSection)
-
-                    switch selectedSection {
-                    case .timeline:
-                        TimelineTabView(editorRoute: $journalEditorRoute)
-                    case .insights:
-                        InsightsTabView()
+                    if !isSplit {
+                        JournalSectionPicker(selectedSection: $selectedSection)
                     }
 
+                    // The timeline stays in one place in the view tree whether
+                    // or not the columns are split, so folding keeps its filter,
+                    // search and any open entry.
+                    if isSplit || selectedSection == .timeline {
+                        TimelineTabView(editorRoute: $journalEditorRoute)
+                    }
+
+                    if !isSplit && selectedSection == .insights {
+                        InsightsTabView()
+                    }
+                } trailing: { isSplit in
+                    if isSplit {
+                        InsightsTabView()
+                    }
                     Spacer(minLength: 118)
                 }
                 .padding(.horizontal, 16)
@@ -2165,6 +2182,7 @@ struct JournalRootView: View {
         .sheet(item: $journalEditorRoute) { route in
             JournalEditorView(editingEntry: route.editingEntry)
                 .id(route.id)
+                .luminaFoldSafeSheet()
         }
     }
 }
@@ -2278,6 +2296,165 @@ private struct JournalRootBackdrop: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
+        }
+    }
+}
+
+// MARK: - Folding display layout
+
+/// Gives its content the display's fold (iPhone Duo opened flat) in the
+/// reader's own coordinates, or nil when there is no fold to lay out around.
+struct LuminaFoldReader<Content: View>: View {
+    @ViewBuilder var content: (_ crease: CGRect?) -> Content
+
+    var body: some View {
+        LuminaFoldGeometryReader { fold in content(fold?.crease) }
+    }
+}
+
+/// The fold in a view's own coordinates, with that view's width.
+struct LuminaFold: Equatable {
+    var crease: CGRect
+    var width: CGFloat
+}
+
+/// Like `LuminaFoldReader`, and also gives the reader's width.
+struct LuminaFoldGeometryReader<Content: View>: View {
+    @ViewBuilder var content: (_ fold: LuminaFold?) -> Content
+    @State private var fold: LuminaFold?
+
+    var body: some View {
+        content(fold.flatMap { $0.crease.minX > 240 ? $0 : nil })
+            .background(LuminaCreaseProbe(fold: $fold))
+    }
+}
+
+/// Lays content out in one column, or — on a folding display opened flat
+/// (iPhone Duo) — in two columns that sit on either side of the fold. The
+/// closures learn whether the columns are split so they can move content.
+struct LuminaFoldColumns<Leading: View, Trailing: View>: View {
+    var spacing: CGFloat = 16
+    @ViewBuilder var leading: (_ isSplit: Bool) -> Leading
+    @ViewBuilder var trailing: (_ isSplit: Bool) -> Trailing
+
+    /// Space kept between each column and the fold.
+    static var foldGap: CGFloat { 16 }
+
+    var body: some View {
+        LuminaFoldReader { crease in
+            let isSplit = crease != nil
+            // Only the layout changes with the posture. The columns keep their
+            // identity, so folding or unfolding keeps every card's state (a
+            // chosen filter, an open sheet, a scroll position).
+            let layout = isSplit
+                ? AnyLayout(HStackLayout(alignment: .top, spacing: 0))
+                : AnyLayout(VStackLayout(spacing: 0))
+            layout {
+                VStack(spacing: spacing) { leading(isSplit) }
+                    .frame(width: crease.map { max(0, $0.minX - Self.foldGap) })
+                    .frame(maxWidth: isSplit ? nil : .infinity)
+                // Unfolded: the fold and a margin either side. Folded: the gap
+                // between the last leading view and the first trailing one.
+                Color.clear
+                    .frame(width: crease.map { $0.width + Self.foldGap * 2 }, height: isSplit ? 0 : spacing)
+                    .accessibilityHidden(true)
+                VStack(spacing: spacing) { trailing(isSplit) }
+                    .frame(maxWidth: .infinity)
+            }
+        }
+    }
+}
+
+extension View {
+    /// On a folding display opened flat (iPhone Duo), keeps this view on the
+    /// leading screen, clear of the fold; elsewhere it stays where `alignment`
+    /// puts it. Apply it to a view laid out across the container's full width,
+    /// such as an overlay card or a centred banner.
+    func luminaBesideFold(alignment: Alignment = .center) -> some View {
+        LuminaFoldReader { crease in
+            let gap = LuminaFoldColumns<EmptyView, EmptyView>.foldGap
+            let placement = crease == nil ? alignment : .leading
+            self
+                .frame(maxWidth: crease.map { max(0, $0.minX - gap) } ?? .infinity, alignment: placement)
+                .frame(maxWidth: .infinity, alignment: placement)
+        }
+    }
+}
+
+extension View {
+    /// For the root of a sheet. Opened flat, iPhone Duo centres a sheet on the
+    /// fold; this keeps the sheet's content on the leading screen and fills the
+    /// part from the fold onward with the app background, so no text or control
+    /// sits on the hinge. Elsewhere it changes nothing.
+    func luminaFoldSafeSheet() -> some View {
+        modifier(LuminaFoldSafeSheet())
+    }
+}
+
+private struct LuminaFoldSafeSheet: ViewModifier {
+    func body(content: Content) -> some View {
+        LuminaFoldGeometryReader { fold in
+            let gap = LuminaFoldColumns<EmptyView, EmptyView>.foldGap
+            // Padding rather than a safe-area inset: a NavigationView inside the
+            // sheet does not pass a SwiftUI inset on to its content.
+            content
+                .padding(.trailing, fold.map { max(0, $0.width - $0.crease.minX + gap) } ?? 0)
+                .background((fold == nil ? Color.clear : Color.organicBackground).ignoresSafeArea())
+        }
+    }
+}
+
+/// Reports a vertical display fold (UIKit `.division` reserved region,
+/// iOS 27.1) in this view's coordinates; nil on other devices.
+private struct LuminaCreaseProbe: UIViewRepresentable {
+    @Binding var fold: LuminaFold?
+
+    func makeUIView(context: Context) -> ProbeView {
+        let view = ProbeView()
+        view.isUserInteractionEnabled = false
+        view.isAccessibilityElement = false
+        return view
+    }
+
+    func updateUIView(_ view: ProbeView, context: Context) {
+        let binding = $fold
+        view.onChange = { value in if binding.wrappedValue != value { binding.wrappedValue = value } }
+        view.report()
+    }
+
+    final class ProbeView: UIView {
+        var onChange: ((LuminaFold?) -> Void)?
+        private var reported: LuminaFold?? = .none
+
+        override func layoutSubviews() { super.layoutSubviews(); report() }
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            report()
+            // A sheet moves into place without laying its content out again:
+            // look once more when the presentation has settled.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.report() }
+        }
+
+        func report() {
+            guard let window, bounds.width > 0 else { return }
+            var value: LuminaFold?
+            if #available(iOS 27.1, *) {
+                // Views inside a sheet stop receiving the fold once the sheet
+                // settles, though the sheet still lies across it: fall back to
+                // the window's fold in this view's coordinates.
+                var frames = reservedRegions(kind: .division, options: .includeInactive).map(\.frame)
+                if frames.isEmpty {
+                    frames = window.reservedRegions(kind: .division, options: .includeInactive)
+                        .map { convert($0.frame, from: window) }
+                }
+                value = frames
+                    .first { $0.width < bounds.width * 0.2 && $0.midX > 0 && $0.midX < bounds.width && $0.height > $0.width }
+                    .map { LuminaFold(crease: CGRect(x: $0.minX.rounded(), y: 0, width: $0.width.rounded(), height: 1), width: bounds.width.rounded()) }
+            }
+            guard reported != .some(value) else { return }
+            reported = .some(value)
+            let onChange = onChange
+            DispatchQueue.main.async { onChange?(value) }
         }
     }
 }

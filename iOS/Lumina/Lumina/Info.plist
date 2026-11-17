@@ -43,11 +43,16 @@
 	<string>Lumia uses the camera for optional video therapy sessions.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Lumia uses speech recognition to transcribe your voice into chat and journal inputs.</string>
-	<key>UIRequiresFullScreen</key>
-	<true/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict>

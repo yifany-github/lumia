@@ -301,14 +301,14 @@ struct ProfileView: View {
             }
         }
         .preferredColorScheme(LuminaAppearanceMode.normalized(appearanceModeRawValue).colorScheme)
-        .sheet(isPresented: $showNameEdit)  { nameSheet }
-        .sheet(isPresented: $showBioEdit)   { bioSheet }
-        .sheet(isPresented: $showIdentityEdit) { identitySheet }
-        .sheet(isPresented: $showAIConnection) { aiConnectionSheet }
-        .sheet(isPresented: $showGoalSheet) { goalsSheet }
-        .sheet(isPresented: $showAccountSheet) { accountSheet }
-        .sheet(isPresented: $showMembershipSheet) { membershipSheet }
-        .sheet(isPresented: $showAIDataDisclosure) { aiDataDisclosureSheet }
+        .sheet(isPresented: $showNameEdit)  { nameSheet.luminaFoldSafeSheet() }
+        .sheet(isPresented: $showBioEdit)   { bioSheet.luminaFoldSafeSheet() }
+        .sheet(isPresented: $showIdentityEdit) { identitySheet.luminaFoldSafeSheet() }
+        .sheet(isPresented: $showAIConnection) { aiConnectionSheet.luminaFoldSafeSheet() }
+        .sheet(isPresented: $showGoalSheet) { goalsSheet.luminaFoldSafeSheet() }
+        .sheet(isPresented: $showAccountSheet) { accountSheet.luminaFoldSafeSheet() }
+        .sheet(isPresented: $showMembershipSheet) { membershipSheet.luminaFoldSafeSheet() }
+        .sheet(isPresented: $showAIDataDisclosure) { aiDataDisclosureSheet.luminaFoldSafeSheet() }
         .sheet(isPresented: $showShareSheet) { ShareSheet(items: [exportText]) }
         .alert("Reset All Data?", isPresented: $showClearConfirm) {
             Button("Delete Everything", role: .destructive) {

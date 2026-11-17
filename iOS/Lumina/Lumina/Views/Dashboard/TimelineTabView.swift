@@ -104,6 +104,7 @@ struct TimelineTabView: View {
                     confirmDelete(entry)
                 }
             )
+            .luminaFoldSafeSheet()
         }
     }
 
